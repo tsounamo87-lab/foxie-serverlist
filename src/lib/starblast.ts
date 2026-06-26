@@ -7,6 +7,8 @@
 // ------------------------------------------------------------------
 
 export const SIMSTATUS_URL = 'https://starblast.dankdmitron.dev/api/simstatus.json'
+const SIMSTATUS_FALLBACK_URL = 'https://game.starblast.io/simstatus.json'
+const SIMSTATUS_TIMEOUT_MS = 7_000
 /** POST a game URL here to share it → appears for all users on both Foxie and dankdmitron. */
 export const SHARE_CUSTOM_URL = 'https://starblast.dankdmitron.dev/api/post'
 
@@ -70,15 +72,32 @@ export function modeLabel(s: System): string {
   return MODE_LABELS[s.mode] ?? s.mode.charAt(0).toUpperCase() + s.mode.slice(1)
 }
 
+async function fetchSimstatus(url: string, signal?: AbortSignal): Promise<Server[]> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort('timeout'), SIMSTATUS_TIMEOUT_MS)
+  signal?.addEventListener('abort', () => ctrl.abort())
+  try {
+    const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' })
+    if (!res.ok) throw new Error(`simstatus ${res.status}`)
+    return res.json() as Promise<Server[]>
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** Fetch + flatten all systems into a single sortable list. */
 export async function fetchGames(signal?: AbortSignal): Promise<{
   servers: Server[]
   games: GameEntry[]
   fetchedAt: number
 }> {
-  const res = await fetch(SIMSTATUS_URL, { signal, cache: 'no-store' })
-  if (!res.ok) throw new Error(`simstatus ${res.status}`)
-  const servers: Server[] = await res.json()
+  let servers: Server[]
+  try {
+    servers = await fetchSimstatus(SIMSTATUS_URL, signal)
+  } catch (e) {
+    if (signal?.aborted) throw e
+    servers = await fetchSimstatus(SIMSTATUS_FALLBACK_URL, signal)
+  }
 
   const games: GameEntry[] = []
   const seen = new Set<string>()
