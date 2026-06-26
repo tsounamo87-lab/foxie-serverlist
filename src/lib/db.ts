@@ -314,7 +314,7 @@ export interface PlayerActivityRow {
  * in PostgreSQL. Returns one row per player, sorted by kills descending.
  * Paginates automatically (Supabase caps RPC responses at 1000 rows by default).
  */
-export async function getPlayerActivityRpc(since: number): Promise<PlayerActivityRow[]> {
+export async function getPlayerActivityRpc(since: number, maxRows = 10_000): Promise<PlayerActivityRow[]> {
   if (!supabaseConfigured) return []
 
   type Row = {
@@ -327,23 +327,16 @@ export async function getPlayerActivityRpc(since: number): Promise<PlayerActivit
     regions: string[]
   }
 
-  const all: Row[] = []
-  const MAX_PLAYERS = 50_000
+  const { data, error } = await supabase!
+    .rpc('get_player_activity', { p_since: since })
+    .limit(maxRows)
 
-  for (let from = 0; from < MAX_PLAYERS; from += PAGE) {
-    const { data, error } = await supabase!
-      .rpc('get_player_activity', { p_since: since })
-      .range(from, from + PAGE - 1)
-    if (error) {
-      console.warn('[db] get_player_activity rpc error:', error.message)
-      break
-    }
-    const rows = (data ?? []) as Row[]
-    all.push(...rows)
-    if (rows.length < PAGE) break
+  if (error) {
+    console.warn('[db] get_player_activity rpc error:', error.message)
+    return []
   }
 
-  return all.map((r) => ({
+  return ((data ?? []) as Row[]).map((r) => ({
     playerName:      r.player_name,
     totalKills:      Number(r.total_kills),
     totalDurationMs: Number(r.total_dur_ms),
