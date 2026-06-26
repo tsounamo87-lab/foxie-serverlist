@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Map as MapIcon, Search, SearchX, Trophy, TrendingUp, WifiOff, Zap } from 'lucide-react'
+import { Activity, AlertTriangle, Map as MapIcon, Search, SearchX, Trophy, TrendingUp, WifiOff, Zap } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Header } from './components/Header'
 import { StatsBar } from './components/StatsBar'
@@ -25,7 +25,9 @@ import { useAlerts } from './store/alerts'
 import { useToasts } from './store/toasts'
 import { Sounds } from './lib/sounds'
 import { SurvivalActivity } from './components/SurvivalActivity'
+import { TeamActivity } from './components/TeamActivity'
 import { recordSnapshot } from './lib/survivalTracker'
+import { recordTeamSnapshot } from './lib/teamTracker'
 import { useClans } from './store/clans'
 import { ClanManager } from './components/ClanManager'
 import { useCustom } from './store/custom'
@@ -42,6 +44,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [activityOpen, setActivityOpen] = useState(false)
+  const [teamActivityOpen, setTeamActivityOpen] = useState(false)
   const [clanManagerOpen, setClanManagerOpen] = useState(false)
   const [showTrends, setShowTrends] = useState(false)
   const [showWorldMap, setShowWorldMap] = useState(false)
@@ -153,8 +156,8 @@ function App() {
       }
     }
 
-    // Record survival player observations to IndexedDB
     void recordSnapshot(enriched, fetchedAt)
+    void recordTeamSnapshot(enriched, fetchedAt)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchedAt])
 
@@ -205,6 +208,7 @@ function App() {
           <ToolbarPill icon={<MapIcon className="size-3.5" />} label="World map" active={showWorldMap} onClick={() => setShowWorldMap(v => !v)} />
           <ToolbarPill icon={<Trophy className="size-3.5" />} label="Leaderboard" active={false} onClick={() => setLeaderboardOpen(true)} />
           <ToolbarPill icon={<Zap className="size-3.5" />} label="Find game" active={false} onClick={() => setFindGameOpen(true)} kbd="F" />
+          <ToolbarPill icon={<Activity className="size-3.5" />} label="Team activity" active={teamActivityOpen} onClick={() => { Sounds.open(); setTeamActivityOpen(true) }} />
           <ToolbarPill icon={<Search className="size-3.5" />} label="Find player" active={false} onClick={() => setSearchOpen(true)} kbd="⌘K" />
         </motion.div>
 
@@ -263,6 +267,7 @@ function App() {
       <Toaster />
       {selected && <ServerDetailModal game={selected} onClose={() => { Sounds.close(); setSelected(null) }} />}
       {activityOpen && <SurvivalActivity onClose={() => { Sounds.close(); setActivityOpen(false) }} />}
+      {teamActivityOpen && <TeamActivity onClose={() => { Sounds.close(); setTeamActivityOpen(false) }} />}
       {clanManagerOpen && <ClanManager onClose={() => { Sounds.close(); setClanManagerOpen(false) }} />}
       {leaderboardOpen && <Leaderboard games={enriched} onClose={() => setLeaderboardOpen(false)} onOpenGame={(g) => { Sounds.open(); setSelected(g) }} />}
       {findGameOpen && <FindGame games={enriched} onClose={() => setFindGameOpen(false)} onOpen={(g) => { Sounds.open(); setSelected(g) }} />}

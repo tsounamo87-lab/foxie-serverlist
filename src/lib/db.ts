@@ -580,6 +580,101 @@ export async function getPlayerBadgeHistory(playerName: string): Promise<BadgeHi
   }))
 }
 
+// ── Team observations ─────────────────────────────────────────────────────────
+
+export interface TeamObservation {
+  id?: number
+  ts: number
+  serverId: string
+  serverName: string
+  region: string
+  playerName: string
+  score: number
+  ship: number
+  team: number
+}
+
+export async function saveTeamObservations(obs: Omit<TeamObservation, 'id'>[]): Promise<void> {
+  if (!supabaseConfigured || !obs.length) return
+  const rows = obs.map((o) => ({
+    ts:          o.ts,
+    server_id:   o.serverId,
+    server_name: o.serverName,
+    region:      o.region,
+    player_name: o.playerName,
+    score:       o.score,
+    ship:        o.ship,
+    team:        o.team,
+  }))
+  const { error } = await supabase!
+    .from('team_observations')
+    .upsert(rows, { onConflict: 'ts,server_id,player_name', ignoreDuplicates: true })
+  if (error) console.warn('[db] team upsert error', error.message)
+}
+
+export interface TeamPlayerRow {
+  playerName: string
+  totalDurationMs: number
+  sessionCount: number
+  maxScore: number
+  lastSeen: number
+  regions: string[]
+}
+
+export async function getTeamPlayerStatsRpc(since: number, maxRows = 30_000): Promise<TeamPlayerRow[]> {
+  if (!supabaseConfigured) return []
+
+  type TRow = {
+    player_name: string
+    total_dur_ms: number
+    session_count: number
+    max_score: number
+    last_seen_ts: number
+    regions: string[]
+  }
+
+  const fetchPage = async (from: number): Promise<TRow[]> => {
+    const { data, error } = await supabase!
+      .rpc('get_team_player_stats_fast', { p_since: since })
+      .range(from, from + PAGE - 1)
+    if (error) { console.warn('[db] team rpc error', error.message); return [] }
+    return (data ?? []) as TRow[]
+  }
+
+  const toRow = (r: TRow): TeamPlayerRow => ({
+    playerName:      r.player_name,
+    totalDurationMs: Number(r.total_dur_ms),
+    sessionCount:    Number(r.session_count),
+    maxScore:        Number(r.max_score),
+    lastSeen:        Number(r.last_seen_ts),
+    regions:         r.regions ?? [],
+  })
+
+  const first = await fetchPage(0)
+  if (first.length < PAGE) return first.map(toRow)
+
+  const remaining: TRow[][] = []
+  for (let from = PAGE; from < maxRows; from += PAGE * 5) {
+    const batch = await Promise.all(
+      [0, 1, 2, 3, 4].map((i) => from + i * PAGE).filter((f) => f < maxRows).map(fetchPage),
+    )
+    remaining.push(...batch)
+    if (batch.some((b) => b.length < PAGE)) break
+  }
+
+  return [first, ...remaining].flat().map(toRow)
+}
+
+export async function countTeamObservationsSince(since: number): Promise<number> {
+  if (!supabaseConfigured) return 0
+  const { count, error } = await supabase!
+    .from('team_observations')
+    .select('*', { count: 'exact', head: true })
+    .gte('ts', since)
+  if (error) return 0
+  return count ?? 0
+}
+
 // ── Background notification subscriptions ─────────────────────────────────────
 // Stored in Supabase so the Edge Function can send Discord webhooks 24/7,
 // even when no browser has the site open.
