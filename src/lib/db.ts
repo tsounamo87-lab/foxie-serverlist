@@ -332,7 +332,7 @@ export async function getPlayerActivityRpc(since: number, maxRows = 30_000): Pro
       .rpc('get_player_stats_fast', { p_since: since })
       .range(from, from + PAGE - 1)
     if (error) {
-      console.warn('[db] get_player_activity rpc error:', error.message)
+      console.warn('[db] get_player_stats_fast rpc error:', error.message)
       return []
     }
     return (data ?? []) as Row[]
