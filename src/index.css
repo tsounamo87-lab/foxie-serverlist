@@ -1,0 +1,744 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------ */
+/*  Web fonts (selectable at runtime via --app-font)                   */
+/* ------------------------------------------------------------------ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700;800&display=swap');
+
+/* Starblast vanilla ships font — maps PUA codepoints to ship silhouettes. */
+@font-face {
+  font-family: 'StarblastVanilla';
+  src: url('/fonts/starblast-vanilla-ships.ttf') format('truetype');
+  font-display: swap;
+}
+
+/* Starblast glyphs — used by ECP vector badges (star, pirate, empire…). */
+@font-face {
+  font-family: 'SBGlyphs';
+  src: url('/fonts/starblast-glyphs.ttf') format('truetype');
+  font-display: swap;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Expose runtime CSS variables as Tailwind theme tokens              */
+/*  (these read from whatever [data-theme] sets below)                 */
+/* ------------------------------------------------------------------ */
+@theme inline {
+  --color-bg: var(--c-bg);
+  --color-surface: var(--c-surface);
+  --color-surface-2: var(--c-surface-2);
+  --color-border: var(--c-border);
+  --color-text: var(--c-text);
+  --color-muted: var(--c-muted);
+  --color-accent: var(--c-accent);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-accent-2: var(--c-accent-2);
+  --color-on-accent: var(--c-on-accent);
+  --color-success: var(--c-success);
+  --color-warning: var(--c-warning);
+  --color-danger: var(--c-danger);
+
+  --font-sans: var(--app-font);
+  --radius-app: var(--app-radius);
+}
+
+/* ================================================================== */
+/*  THEMES — each sets the --c-* palette. "fox" is the signature.      */
+/* ================================================================== */
+
+/* Fox — warm orange on deep charcoal (DEFAULT) */
+[data-theme='fox'] {
+  --c-bg: #14110e;
+  --c-bg-grad: radial-gradient(1200px 600px at 80% -10%, #2a1c10 0%, transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, #1c1410 0%, transparent 55%);
+  --c-surface: #1e1916;
+  --c-surface-2: #2a221d;
+  --c-border: #3a2f27;
+  --c-text: #f5ece4;
+  --c-muted: #a89684;
+  --c-accent: #ff7a2f;
+  --c-accent-soft: #ff7a2f26;
+  --c-accent-2: #ffb347;
+  --c-on-accent: #fff;
+  --c-success: #5fd07a;
+  --c-warning: #ffcb47;
+  --c-danger: #ff5d5d;
+}
+
+/* Midnight — neon cyan / violet space */
+[data-theme='midnight'] {
+  --c-bg: #07090f;
+  --c-bg-grad: radial-gradient(1100px 600px at 85% -10%, #102036 0%, transparent 60%),
+    radial-gradient(800px 500px at -10% 110%, #1a1030 0%, transparent 55%);
+  --c-surface: #0d1018;
+  --c-surface-2: #151a26;
+  --c-border: #232b3d;
+  --c-text: #e8eefc;
+  --c-muted: #8190ad;
+  --c-accent: #38bdf8;
+  --c-accent-soft: #38bdf826;
+  --c-accent-2: #a78bfa;
+  --c-on-accent: #07090f;
+  --c-success: #4ade80;
+  --c-warning: #fbbf24;
+  --c-danger: #fb7185;
+}
+
+/* Nebula — vivid violet glass */
+[data-theme='nebula'] {
+  --c-bg: #0c0816;
+  --c-bg-grad: radial-gradient(1000px 600px at 80% -10%, #3a1b6b 0%, transparent 60%),
+    radial-gradient(900px 500px at -5% 110%, #6b1b4d 0%, transparent 55%);
+  --c-surface: #160f26;
+  --c-surface-2: #211633;
+  --c-border: #33264d;
+  --c-text: #f3ecff;
+  --c-muted: #a895c9;
+  --c-accent: #c084fc;
+  --c-accent-soft: #c084fc2b;
+  --c-accent-2: #f472b6;
+  --c-on-accent: #fff;
+  --c-success: #5fe3a1;
+  --c-warning: #fcd34d;
+  --c-danger: #fb7185;
+}
+
+/* Terminal — green phosphor on black */
+[data-theme='terminal'] {
+  --c-bg: #06080a;
+  --c-bg-grad: radial-gradient(900px 500px at 90% -10%, #0c1f15 0%, transparent 60%);
+  --c-surface: #0a0f0c;
+  --c-surface-2: #0f1712;
+  --c-border: #1c2c22;
+  --c-text: #d7ffe6;
+  --c-muted: #6f9c84;
+  --c-accent: #3ddc84;
+  --c-accent-soft: #3ddc8424;
+  --c-accent-2: #8be9fd;
+  --c-on-accent: #06080a;
+  --c-success: #3ddc84;
+  --c-warning: #f1fa8c;
+  --c-danger: #ff6e6e;
+}
+
+/* Daylight — clean light fox */
+[data-theme='daylight'] {
+  --c-bg: #f6f3ef;
+  --c-bg-grad: radial-gradient(1100px 600px at 85% -10%, #ffe6d0 0%, transparent 60%);
+  --c-surface: #ffffff;
+  --c-surface-2: #f1ebe4;
+  --c-border: #e2d8cd;
+  --c-text: #211a14;
+  --c-muted: #7a6c5d;
+  --c-accent: #e9610f;
+  --c-accent-soft: #e9610f1a;
+  --c-accent-2: #f08a2c;
+  --c-on-accent: #fff;
+  --c-success: #2fa35a;
+  --c-warning: #d99412;
+  --c-danger: #d64545;
+}
+
+/* Crimson — blood red on deep dark */
+[data-theme='crimson'] {
+  --c-bg: #0e0909;
+  --c-bg-grad: radial-gradient(1100px 600px at 80% -10%, #2c0b0b 0%, transparent 60%),
+    radial-gradient(800px 500px at -10% 110%, #1a0707 0%, transparent 55%);
+  --c-surface: #180c0c;
+  --c-surface-2: #251414;
+  --c-border: #3e1d1d;
+  --c-text: #f9e8e8;
+  --c-muted: #a87878;
+  --c-accent: #e53545;
+  --c-accent-soft: #e5354526;
+  --c-accent-2: #ff7b8a;
+  --c-on-accent: #fff;
+  --c-success: #5fd07a;
+  --c-warning: #ffcb47;
+  --c-danger: #ff3333;
+}
+
+/* Aurora — northern lights teal/cyan */
+[data-theme='aurora'] {
+  --c-bg: #040e0d;
+  --c-bg-grad: radial-gradient(1100px 600px at 80% -10%, #092822 0%, transparent 60%),
+    radial-gradient(900px 600px at -5% 110%, #061c2c 0%, transparent 55%);
+  --c-surface: #081816;
+  --c-surface-2: #0e2421;
+  --c-border: #173737;
+  --c-text: #e6faf7;
+  --c-muted: #7abbb6;
+  --c-accent: #00e5c8;
+  --c-accent-soft: #00e5c826;
+  --c-accent-2: #7af5c8;
+  --c-on-accent: #040e0d;
+  --c-success: #4ade80;
+  --c-warning: #fbbf24;
+  --c-danger: #fb7185;
+}
+
+/* Ember — deep gold / amber forge */
+[data-theme='ember'] {
+  --c-bg: #0d0a05;
+  --c-bg-grad: radial-gradient(1200px 600px at 70% -10%, #281a06 0%, transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, #1c1208 0%, transparent 55%);
+  --c-surface: #171008;
+  --c-surface-2: #241a0c;
+  --c-border: #3e2e14;
+  --c-text: #faf0e0;
+  --c-muted: #b09050;
+  --c-accent: #f5a623;
+  --c-accent-soft: #f5a62326;
+  --c-accent-2: #ffe08a;
+  --c-on-accent: #0d0a05;
+  --c-success: #5fd07a;
+  --c-warning: #ffcb47;
+  --c-danger: #ff6b3d;
+}
+
+/* Void — pitch black, electric monochrome */
+[data-theme='void'] {
+  --c-bg: #060606;
+  --c-bg-grad: none;
+  --c-surface: #0d0d0d;
+  --c-surface-2: #141414;
+  --c-border: #252525;
+  --c-text: #f0f0f0;
+  --c-muted: #666666;
+  --c-accent: #e0e0e0;
+  --c-accent-soft: #e0e0e026;
+  --c-accent-2: #ffffff;
+  --c-on-accent: #060606;
+  --c-success: #6ee7b7;
+  --c-warning: #fbbf24;
+  --c-danger: #f87171;
+}
+
+/* Solar — nuclear gold on deep cosmic black */
+[data-theme='solar'] {
+  --c-bg: #0c0900;
+  --c-bg-grad: radial-gradient(1200px 600px at 65% -15%, #2e1e00 0%, transparent 60%),
+    radial-gradient(900px 500px at -5% 115%, #1a1000 0%, transparent 55%);
+  --c-surface: #161000;
+  --c-surface-2: #231900;
+  --c-border: #3a2e00;
+  --c-text: #fff8e0;
+  --c-muted: #9a8030;
+  --c-accent: #f5d000;
+  --c-accent-soft: #f5d00022;
+  --c-accent-2: #ff9500;
+  --c-on-accent: #1a1200;
+  --c-success: #5fd07a;
+  --c-warning: #f5d000;
+  --c-danger: #ff5d5d;
+}
+
+/* Ocean — abyssal deep sea */
+[data-theme='ocean'] {
+  --c-bg: #020d18;
+  --c-bg-grad: radial-gradient(1200px 600px at 70% -10%, #051e40 0%, transparent 60%),
+    radial-gradient(900px 500px at -10% 120%, #031428 0%, transparent 55%);
+  --c-surface: #05111f;
+  --c-surface-2: #0b1c30;
+  --c-border: #12294a;
+  --c-text: #d0e8ff;
+  --c-muted: #4880b4;
+  --c-accent: #0088ff;
+  --c-accent-soft: #0088ff22;
+  --c-accent-2: #00d8ff;
+  --c-on-accent: #fff;
+  --c-success: #00e676;
+  --c-warning: #ffca28;
+  --c-danger: #ff5252;
+}
+
+/* Rose — deep pink / hot magenta */
+[data-theme='rose'] {
+  --c-bg: #0c0508;
+  --c-bg-grad: radial-gradient(1200px 600px at 75% -10%, #2c0818 0%, transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, #1e0614 0%, transparent 55%);
+  --c-surface: #160a10;
+  --c-surface-2: #22101a;
+  --c-border: #3c1c2e;
+  --c-text: #ffe0f5;
+  --c-muted: #b060a0;
+  --c-accent: #f040b8;
+  --c-accent-soft: #f040b822;
+  --c-accent-2: #ff80e0;
+  --c-on-accent: #fff;
+  --c-success: #5fd07a;
+  --c-warning: #ffcb47;
+  --c-danger: #ff4455;
+}
+
+/* Carbon — ultra-premium dark tech with mint accent */
+[data-theme='carbon'] {
+  --c-bg: #070707;
+  --c-bg-grad: radial-gradient(1100px 600px at 70% -10%, #101010 0%, transparent 60%);
+  --c-surface: #0e0e0e;
+  --c-surface-2: #181818;
+  --c-border: #282828;
+  --c-text: #efefef;
+  --c-muted: #686868;
+  --c-accent: #5dffc0;
+  --c-accent-soft: #5dffc022;
+  --c-accent-2: #00e5ff;
+  --c-on-accent: #070707;
+  --c-success: #5dffc0;
+  --c-warning: #fbbf24;
+  --c-danger: #ff6b6b;
+}
+
+/* Plasma — electric violet / hot purple */
+[data-theme='plasma'] {
+  --c-bg: #070410;
+  --c-bg-grad: radial-gradient(1200px 600px at 80% -10%, #1e0840 0%, transparent 60%),
+    radial-gradient(900px 500px at -10% 115%, #14063a 0%, transparent 55%);
+  --c-surface: #0e0820;
+  --c-surface-2: #181030;
+  --c-border: #2c1c50;
+  --c-text: #ede8ff;
+  --c-muted: #8868cc;
+  --c-accent: #a030ff;
+  --c-accent-soft: #a030ff22;
+  --c-accent-2: #ff44cc;
+  --c-on-accent: #fff;
+  --c-success: #44ffbb;
+  --c-warning: #ffcc44;
+  --c-danger: #ff4455;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Font + radius runtime tokens (set on :root, overridable by user)   */
+/* ------------------------------------------------------------------ */
+:root {
+  --app-font: 'Inter', system-ui, -apple-system, sans-serif;
+  --app-radius: 0.9rem;
+}
+[data-font='space'] { --app-font: 'Space Grotesk', system-ui, sans-serif; }
+[data-font='sora']  { --app-font: 'Sora', system-ui, sans-serif; }
+[data-font='mono']  { --app-font: 'JetBrains Mono', ui-monospace, monospace; }
+
+[data-radius='sharp']   { --app-radius: 0.2rem; }
+[data-radius='default'] { --app-radius: 0.9rem; }
+[data-radius='round']   { --app-radius: 1.5rem; }
+
+/* ------------------------------------------------------------------ */
+/*  Base                                                               */
+/* ------------------------------------------------------------------ */
+html { color-scheme: dark; }
+html[data-theme='daylight'] { color-scheme: light; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--c-bg);
+  background-image: var(--c-bg-grad);
+  background-attachment: fixed;
+  color: var(--c-text);
+  font-family: var(--app-font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+* { border-color: var(--c-border); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--c-border);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--c-muted); background-clip: padding-box; }
+
+/* ------------------------------------------------------------------ */
+/*  Effects — toggled via [data-effects="on"|"off"] on <html>          */
+/* ------------------------------------------------------------------ */
+/* CRT scanlines — terminal theme only, pure CSS, no JS */
+html[data-theme='terminal']::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998; /* just below CursorFx */
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px,
+    transparent 2px,
+    rgba(0, 0, 0, 0.07) 2px,
+    rgba(0, 0, 0, 0.07) 4px
+  );
+}
+
+html[data-effects='on'] .fx-glow {
+  box-shadow: 0 0 0 1px var(--c-accent-soft), 0 0 24px -6px var(--c-accent-soft);
+}
+html[data-effects='on'] .fx-glow-text {
+  text-shadow: 0 0 18px var(--c-accent-soft);
+}
+html[data-effects='off'] * {
+  animation: none !important;
+  transition: none !important;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.live-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up { animation: fade-up 0.3s ease both; }
+
+/* ------------------------------------------------------------------ */
+/*  Default font: Sora (more distinctive than Inter)                   */
+/* ------------------------------------------------------------------ */
+:root {
+  --app-font: 'Sora', system-ui, -apple-system, sans-serif;
+  --app-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --app-radius: 0.9rem;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Premium keyframes                                                   */
+/* ------------------------------------------------------------------ */
+
+@keyframes reveal-up {
+  from { opacity: 0; transform: translateY(28px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+@keyframes gradient-flow {
+  0%   { background-position: 0%   50%; }
+  50%  { background-position: 200% 50%; }
+  100% { background-position: 0%   50%; }
+}
+
+@keyframes border-flow {
+  0%   { background-position: 0%   50%; }
+  50%  { background-position: 200% 50%; }
+  100% { background-position: 0%   50%; }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.93) translateY(12px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+
+@keyframes shimmer-slide {
+  0%   { transform: translateX(-250%) skewX(-12deg); }
+  100% { transform: translateX(250%)  skewX(-12deg); }
+}
+
+@keyframes ring-out {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  100% { transform: scale(2.8); opacity: 0;   }
+}
+
+@keyframes float-gentle {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50%       { transform: translateY(-5px) rotate(2deg); }
+}
+
+@keyframes bar-fill {
+  from { transform: scaleX(0); transform-origin: left; }
+  to   { transform: scaleX(1); transform-origin: left; }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Staggered reveal                                                    */
+/* ------------------------------------------------------------------ */
+
+.animate-reveal-up {
+  animation: reveal-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--reveal-delay, 0ms);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Gradient text                                                       */
+/* ------------------------------------------------------------------ */
+
+.gradient-text {
+  background: linear-gradient(135deg, var(--c-text) 0%, var(--c-accent) 40%, var(--c-accent-2) 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradient-flow 6s ease infinite;
+}
+
+/* ------------------------------------------------------------------ */
+/*  3D card setup                                                       */
+/* ------------------------------------------------------------------ */
+
+.card-3d-wrap {
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.card-shine-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    circle at var(--shine-x, 50%) var(--shine-y, 50%),
+    rgba(255, 255, 255, 0.11) 0%,
+    transparent 65%
+  );
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.card-3d-wrap:hover .card-shine-overlay { opacity: 1; }
+
+/* ------------------------------------------------------------------ */
+/*  Header gradient border                                              */
+/* ------------------------------------------------------------------ */
+
+.header-shimmer-border { position: relative; }
+
+.header-shimmer-border::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--c-accent) 20%,
+    var(--c-accent-2) 80%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: border-flow 5s ease infinite;
+  opacity: 0.55;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Live ring pulse                                                     */
+/* ------------------------------------------------------------------ */
+
+.live-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--c-success);
+  animation: ring-out 1.8s ease-out infinite;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Number / mono font                                                  */
+/* ------------------------------------------------------------------ */
+
+.font-num {
+  font-family: var(--app-font-mono, 'JetBrains Mono', ui-monospace, monospace);
+  font-feature-settings: 'tnum' 1;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Gradient progress bar                                               */
+/* ------------------------------------------------------------------ */
+
+.bar-gradient {
+  background: linear-gradient(90deg, var(--c-accent) 0%, var(--c-accent-2) 100%);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Effects-gated premium states                                        */
+/* ------------------------------------------------------------------ */
+
+html[data-effects='on'] .fx-card-hover:hover {
+  box-shadow:
+    0 24px 56px -12px rgba(0, 0, 0, 0.55),
+    0 0 0 1px var(--c-accent-soft),
+    0 0 48px -10px var(--c-accent-soft);
+}
+
+html[data-effects='on'] .fx-btn-glow:hover {
+  box-shadow: 0 0 20px 0 var(--c-accent-soft);
+}
+
+html[data-effects='on'] .fx-icon-float {
+  animation: float-gentle 3.5s ease-in-out infinite;
+}
+
+/* ================================================================== */
+/*  HOLOGRAPHIC CARD EFFECTS                                           */
+/* ================================================================== */
+
+/* Rainbow shimmer + scanlines overlaid on hover */
+@keyframes holo-border-shift {
+  0%, 100% { background-position: 0%   50%; }
+  50%       { background-position: 100% 50%; }
+}
+
+.holo-card {
+  position: relative;
+  isolation: isolate;
+}
+
+/* Scanline texture — premium tech feel */
+.holo-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent           0px,
+    transparent           3px,
+    rgba(255,255,255,0.012) 3px,
+    rgba(255,255,255,0.012) 4px
+  );
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  z-index: 1;
+}
+
+/* Rainbow holographic shimmer */
+.holo-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    115deg,
+    transparent 25%,
+    rgba(200, 100, 255, 0.06) 38%,
+    rgba(100, 200, 255, 0.07) 50%,
+    rgba(255, 200,  80, 0.06) 62%,
+    transparent 75%
+  );
+  background-size: 300% 300%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  animation: holo-border-shift 3s ease infinite;
+  z-index: 1;
+}
+
+.holo-card:hover::before,
+.holo-card:hover::after {
+  opacity: 1;
+}
+
+/* Mode-specific neon glow (--mode-glow set inline) */
+html[data-effects='on'] .holo-card:hover {
+  box-shadow:
+    0 32px 72px -16px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(255, 255, 255, 0.07),
+    0 0 48px -10px var(--mode-glow, var(--c-accent-soft));
+}
+
+/* ================================================================== */
+/*  FRAMER MOTION PAGE ANIMATIONS                                      */
+/* ================================================================== */
+
+@keyframes slide-in-bottom {
+  from { opacity: 0; transform: translateY(32px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ================================================================== */
+/*  PREMIUM BACKGROUNDS — more dramatic theme gradients               */
+/* ================================================================== */
+
+/* Enhance the body base further — extra nebula depth layer */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 0%, var(--c-accent-soft, rgba(255,122,47,0.06)) 0%, transparent 70%);
+  opacity: 0.6;
+}
+
+/* ================================================================== */
+/*  CURSOR — custom crosshair dot                                      */
+/* ================================================================== */
+
+html[data-effects='on'] *:not(input):not(textarea):not(select) {
+  cursor: none !important;
+}
+
+/* ================================================================== */
+/*  TOOLBAR PILL BUTTONS (trends / worldmap / etc.)                   */
+/* ================================================================== */
+
+.toolbar-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 9999px;
+  border: 1px solid var(--c-border);
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--c-muted);
+  background: var(--c-surface);
+  transition: all 0.2s ease;
+}
+.toolbar-pill:hover {
+  color: var(--c-text);
+  border-color: color-mix(in srgb, var(--c-border) 50%, transparent);
+  transform: translateY(-1px);
+}
+.toolbar-pill.active {
+  border-color: color-mix(in srgb, var(--c-accent) 60%, transparent);
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
+  box-shadow: 0 0 14px -4px var(--c-accent-soft);
+}
+
+/* ================================================================== */
+/*  SCROLL-DRIVEN REVEAL (used by sections)                           */
+/* ================================================================== */
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.section-reveal {
+  animation: fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ================================================================== */
+/*  PREMIUM CURSOR                                                     */
+/* ================================================================== */
+
+.cursor-dot {
+  position: fixed;
+  pointer-events: none;
+  z-index: 99999;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-accent);
+  transform: translate(-50%, -50%);
+  mix-blend-mode: screen;
+  transition: width 0.15s, height 0.15s, opacity 0.15s;
+}
+
+.cursor-ring {
+  position: fixed;
+  pointer-events: none;
+  z-index: 99998;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--c-accent) 50%, transparent);
+  transform: translate(-50%, -50%);
+  transition: width 0.3s cubic-bezier(0.23,1,0.32,1),
+              height 0.3s cubic-bezier(0.23,1,0.32,1),
+              opacity 0.3s;
+}
