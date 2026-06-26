@@ -10,7 +10,7 @@ import { fmtDuration, fmtRelative } from './survivalTracker'
 
 export { fmtDuration, fmtRelative }
 
-const WRITE_BUCKET_MS = 5 * 60 * 1000
+const WRITE_BUCKET_MS = 60 * 1000  // 1 minute
 
 export interface TeamPlayerAggregate {
   playerName: string

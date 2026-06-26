@@ -24,7 +24,7 @@ import {
  * Multiple visitors watching the same server get deduplicated to one row.
  * Must be smaller than SESSION_GAP_MS.
  */
-const WRITE_BUCKET_MS = 5 * 60 * 1000  // 5 minutes
+const WRITE_BUCKET_MS = 60 * 1000  // 1 minute
 
 /**
  * If no observation for a player in a server for this long, the session ended.
