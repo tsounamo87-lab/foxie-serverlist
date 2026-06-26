@@ -6,7 +6,7 @@
 //   • Live status indicator with ring pulse
 //   • Magnetic refresh pill with hover translation
 
-import { Activity, Bell, RefreshCw, Settings, Shield } from 'lucide-react'
+import { Activity, Bell, RefreshCw, Settings, Shield, Swords } from 'lucide-react'
 import { useRef } from 'react'
 import { motion } from 'framer-motion'
 import { FoxLogo } from './FoxLogo'
@@ -19,6 +19,7 @@ interface HeaderProps {
   onOpenSettings: () => void
   onOpenAlerts: () => void
   onOpenActivity: () => void
+  onOpenTeamActivity: () => void
   onOpenClans: () => void
 }
 
@@ -81,6 +82,7 @@ export function Header({
   onOpenSettings,
   onOpenAlerts,
   onOpenActivity,
+  onOpenTeamActivity,
   onOpenClans,
 }: HeaderProps) {
   return (
@@ -126,6 +128,10 @@ export function Header({
         >
           <MagneticBtn onClick={onOpenActivity} title="Survival Activity">
             <Activity className="size-4" />
+          </MagneticBtn>
+
+          <MagneticBtn onClick={onOpenTeamActivity} title="Team Activity">
+            <Swords className="size-4" />
           </MagneticBtn>
 
           <MagneticBtn onClick={onOpenClans} title="Clan Management">

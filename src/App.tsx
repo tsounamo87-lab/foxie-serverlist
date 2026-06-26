@@ -181,6 +181,7 @@ function App() {
         onOpenSettings={() => { Sounds.open(); setSettingsOpen(true) }}
         onOpenAlerts={() => { Sounds.open(); setAlertsOpen(true) }}
         onOpenActivity={() => { Sounds.open(); setActivityOpen(true) }}
+        onOpenTeamActivity={() => { Sounds.open(); setTeamActivityOpen(true) }}
         onOpenClans={() => { Sounds.open(); setClanManagerOpen(true) }}
       />
 
@@ -208,7 +209,6 @@ function App() {
           <ToolbarPill icon={<MapIcon className="size-3.5" />} label="World map" active={showWorldMap} onClick={() => setShowWorldMap(v => !v)} />
           <ToolbarPill icon={<Trophy className="size-3.5" />} label="Leaderboard" active={false} onClick={() => setLeaderboardOpen(true)} />
           <ToolbarPill icon={<Zap className="size-3.5" />} label="Find game" active={false} onClick={() => setFindGameOpen(true)} kbd="F" />
-          <ToolbarPill icon={<Activity className="size-3.5" />} label="Team activity" active={teamActivityOpen} onClick={() => { Sounds.open(); setTeamActivityOpen(true) }} />
           <ToolbarPill icon={<Search className="size-3.5" />} label="Find player" active={false} onClick={() => setSearchOpen(true)} kbd="⌘K" />
         </motion.div>
 
