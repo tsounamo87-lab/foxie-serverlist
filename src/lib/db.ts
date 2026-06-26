@@ -314,7 +314,7 @@ export interface PlayerActivityRow {
  * in PostgreSQL. Returns one row per player, sorted by kills descending.
  * Paginates automatically (Supabase caps RPC responses at 1000 rows by default).
  */
-export async function getPlayerActivityRpc(since: number, maxRows = 10_000): Promise<PlayerActivityRow[]> {
+export async function getPlayerActivityRpc(since: number, maxRows = 30_000): Promise<PlayerActivityRow[]> {
   if (!supabaseConfigured) return []
 
   type Row = {
@@ -327,24 +327,50 @@ export async function getPlayerActivityRpc(since: number, maxRows = 10_000): Pro
     regions: string[]
   }
 
-  const { data, error } = await supabase!
-    .rpc('get_player_activity', { p_since: since })
-    .limit(maxRows)
-
-  if (error) {
-    console.warn('[db] get_player_activity rpc error:', error.message)
-    return []
+  const fetchPage = async (from: number): Promise<Row[]> => {
+    const { data, error } = await supabase!
+      .rpc('get_player_activity', { p_since: since })
+      .range(from, from + PAGE - 1)
+    if (error) {
+      console.warn('[db] get_player_activity rpc error:', error.message)
+      return []
+    }
+    return (data ?? []) as Row[]
   }
 
-  return ((data ?? []) as Row[]).map((r) => ({
-    playerName:      r.player_name,
-    totalKills:      Number(r.total_kills),
-    totalDurationMs: Number(r.total_dur_ms),
-    sessionCount:    Number(r.session_count),
-    maxScore:        Number(r.max_score),
-    lastSeen:        Number(r.last_seen_ts),
-    regions:         r.regions ?? [],
-  }))
+  // Fetch first page to know if more exist, then fire remaining pages in parallel
+  const first = await fetchPage(0)
+  if (first.length < PAGE) {
+    return first.map(toAggregate)
+  }
+
+  const remaining: Row[][] = []
+  for (let from = PAGE; from < maxRows; from += PAGE * 5) {
+    const batch = await Promise.all(
+      [0, 1, 2, 3, 4]
+        .map((i) => from + i * PAGE)
+        .filter((f) => f < maxRows)
+        .map(fetchPage),
+    )
+    remaining.push(...batch)
+    if (batch.some((b) => b.length < PAGE)) break
+  }
+
+  const all = [first, ...remaining].flat()
+
+  function toAggregate(r: Row): PlayerActivityRow {
+    return {
+      playerName:      r.player_name,
+      totalKills:      Number(r.total_kills),
+      totalDurationMs: Number(r.total_dur_ms),
+      sessionCount:    Number(r.session_count),
+      maxScore:        Number(r.max_score),
+      lastSeen:        Number(r.last_seen_ts),
+      regions:         r.regions ?? [],
+    }
+  }
+
+  return all.map(toAggregate)
 }
 
 /**
