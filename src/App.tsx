@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Activity, AlertTriangle, Map as MapIcon, Search, SearchX, Trophy, TrendingUp, WifiOff, Zap } from 'lucide-react'
+import { AlertTriangle, Map as MapIcon, Search, SearchX, Trophy, TrendingUp, WifiOff, Zap } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Header } from './components/Header'
 import { StatsBar } from './components/StatsBar'
