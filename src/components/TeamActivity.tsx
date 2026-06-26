@@ -134,7 +134,10 @@ interface Props {
 const PAGE_SIZE = 100
 type EcpFilter = 'all' | 'ecp' | 'no-ecp' | 'modified'
 
+type TeamTab = 'classic' | 'gotn'
+
 export function TeamActivity({ onClose }: Props) {
+  const [tab, setTab] = useState<TeamTab>('classic')
   const [period, setPeriod] = useState<PeriodLabel>('7d')
   const [loading, setLoading] = useState(false)
   const [players, setPlayers] = useState<TeamPlayerAggregate[]>([])
@@ -154,7 +157,7 @@ export function TeamActivity({ onClose }: Props) {
     try {
       const since = periodMs === 0 ? 0 : Date.now() - periodMs
       const [result, newEcpMap] = await Promise.all([
-        queryTeamActivity(since),
+        queryTeamActivity(since, tab === 'gotn'),
         getPlayerEcpMap(),
       ])
       setPlayers(result.players)
@@ -165,13 +168,23 @@ export function TeamActivity({ onClose }: Props) {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [periodMs])
+  }, [periodMs, tab])
 
   useEffect(() => {
     void load()
     const id = setInterval(() => { void load(true) }, 60_000)
     return () => clearInterval(id)
   }, [load])
+
+  const switchTab = (t: TeamTab) => {
+    setTab(t)
+    setSearch('')
+    setSortKey('score')
+    setSortAsc(false)
+    setEcpFilter('all')
+    setDisplayLimit(PAGE_SIZE)
+    setSelected(null)
+  }
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortAsc((v) => !v)
@@ -230,6 +243,26 @@ export function TeamActivity({ onClose }: Props) {
                   ? <>{players.length} players{totalObs > 0 && <span className="ml-1 opacity-60">· {totalObs.toLocaleString()} obs</span>}</>
                   : 'Browse team servers to start collecting data'}
               </p>
+            </div>
+
+            {/* Classic / GOTN tabs */}
+            <div className="flex items-center rounded-lg border border-border bg-surface-2 p-0.5">
+              <button
+                onClick={() => switchTab('classic')}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  tab === 'classic' ? 'bg-accent text-bg' : 'text-muted hover:text-text'
+                }`}
+              >
+                Classic
+              </button>
+              <button
+                onClick={() => switchTab('gotn')}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  tab === 'gotn' ? 'bg-accent text-bg' : 'text-muted hover:text-text'
+                }`}
+              >
+                Game of the Night
+              </button>
             </div>
 
             <div className="ml-auto flex items-center gap-1">

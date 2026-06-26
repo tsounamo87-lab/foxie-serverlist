@@ -621,7 +621,7 @@ export interface TeamPlayerRow {
   regions: string[]
 }
 
-export async function getTeamPlayerStatsRpc(since: number, maxRows = 30_000): Promise<TeamPlayerRow[]> {
+export async function getTeamPlayerStatsRpc(since: number, gotn = false, maxRows = 30_000): Promise<TeamPlayerRow[]> {
   if (!supabaseConfigured) return []
 
   type TRow = {
@@ -635,7 +635,7 @@ export async function getTeamPlayerStatsRpc(since: number, maxRows = 30_000): Pr
 
   const fetchPage = async (from: number): Promise<TRow[]> => {
     const { data, error } = await supabase!
-      .rpc('get_team_player_stats_fast', { p_since: since })
+      .rpc('get_team_player_stats_fast', { p_since: since, p_gotn: gotn })
       .range(from, from + PAGE - 1)
     if (error) { console.warn('[db] team rpc error', error.message); return [] }
     return (data ?? []) as TRow[]
@@ -665,12 +665,15 @@ export async function getTeamPlayerStatsRpc(since: number, maxRows = 30_000): Pr
   return [first, ...remaining].flat().map(toRow)
 }
 
-export async function countTeamObservationsSince(since: number): Promise<number> {
+export async function countTeamObservationsSince(since: number, gotn = false): Promise<number> {
   if (!supabaseConfigured) return 0
-  const { count, error } = await supabase!
+  let q = supabase!
     .from('team_observations')
     .select('*', { count: 'exact', head: true })
     .gte('ts', since)
+  if (gotn) q = q.ilike('server_name', '%game of the night%')
+  else q = q.not('server_name', 'ilike', '%game of the night%')
+  const { count, error } = await q
   if (error) return 0
   return count ?? 0
 }
