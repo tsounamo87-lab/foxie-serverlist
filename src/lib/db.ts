@@ -329,7 +329,7 @@ export async function getPlayerActivityRpc(since: number, maxRows = 30_000): Pro
 
   const fetchPage = async (from: number): Promise<Row[]> => {
     const { data, error } = await supabase!
-      .rpc('get_player_activity', { p_since: since })
+      .rpc('get_player_stats_fast', { p_since: since })
       .range(from, from + PAGE - 1)
     if (error) {
       console.warn('[db] get_player_activity rpc error:', error.message)
