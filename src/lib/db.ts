@@ -452,9 +452,11 @@ export async function upsertPlayerEcp(
   if (error) console.warn('[db] ecp upsert error', error.message)
 }
 
-/** Fetch every known ECP badge from Supabase (paginated).
- *  Returns a Map<playerName_lower → PlayerCustom>. */
+let _ecpCache: { map: Map<string, PlayerCustom>; fetchedAt: number } | null = null
+
+/** Fetch every known ECP badge from Supabase (paginated). Cached for 30 min. */
 export async function getPlayerEcpMap(): Promise<Map<string, PlayerCustom>> {
+  if (_ecpCache && Date.now() - _ecpCache.fetchedAt < 30 * 60_000) return _ecpCache.map
   if (!supabaseConfigured) return new Map()
   type EcpRow = { player_name: string; badge: string | null; finish: string | null; laser: string | null; hue: number }
   const all: EcpRow[] = []
@@ -478,6 +480,7 @@ export async function getPlayerEcpMap(): Promise<Map<string, PlayerCustom>> {
       hue:    row.hue,
     })
   }
+  _ecpCache = { map, fetchedAt: Date.now() }
   return map
 }
 

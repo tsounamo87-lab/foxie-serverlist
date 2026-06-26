@@ -259,12 +259,9 @@ export function SurvivalActivity({ onClose }: Props) {
     }
   }, [periodMs])
 
-  // Load on mount and when period changes, then silently refresh every 60s while
-  // open so the panel stays live without a manual click (and without flashing
-  // the spinner / wiping the table).
   useEffect(() => {
     void load()
-    const id = setInterval(() => { void load(true) }, 60_000)
+    const id = setInterval(() => { void load(true) }, 5 * 60_000)
     return () => clearInterval(id)
   }, [load])
 
