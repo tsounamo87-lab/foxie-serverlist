@@ -26,7 +26,8 @@ export async function recordTeamSnapshot(games: EnrichedGame[], ts: number): Pro
   const obs: Omit<import('./db').TeamObservation, 'id'>[] = []
 
   for (const game of games) {
-    if (game.mode !== 'team') continue
+    const isAow = /aow/i.test(game.name ?? '')
+    if (game.mode !== 'team' && !isAow) continue
     if (!game.livePlayers?.length) continue
 
     for (const p of game.livePlayers) {
