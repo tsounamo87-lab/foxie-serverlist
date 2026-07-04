@@ -261,7 +261,7 @@ export function SurvivalActivity({ onClose }: Props) {
 
   useEffect(() => {
     void load()
-    const id = setInterval(() => { void load(true) }, 5 * 60_000)
+    const id = setInterval(() => { if (!document.hidden) void load(true) }, 5 * 60_000)
     return () => clearInterval(id)
   }, [load])
 
