@@ -134,7 +134,13 @@ interface Props {
 const PAGE_SIZE = 100
 type EcpFilter = 'all' | 'ecp' | 'no-ecp' | 'modified'
 
-type TeamTab = 'classic' | 'gotn'
+type TeamTab = 'classic' | 'gotn' | 'aow'
+
+const TABS: { id: TeamTab; label: string }[] = [
+  { id: 'classic', label: 'Classic' },
+  { id: 'gotn',    label: 'Game of the Night' },
+  { id: 'aow',     label: 'AOW' },
+]
 
 export function TeamActivity({ onClose }: Props) {
   const [tab, setTab] = useState<TeamTab>('classic')
@@ -157,7 +163,7 @@ export function TeamActivity({ onClose }: Props) {
     try {
       const since = periodMs === 0 ? 0 : Date.now() - periodMs
       const [result, newEcpMap] = await Promise.all([
-        queryTeamActivity(since, tab === 'gotn'),
+        queryTeamActivity(since, tab),
         getPlayerEcpMap(),
       ])
       setPlayers(result.players)
@@ -245,24 +251,19 @@ export function TeamActivity({ onClose }: Props) {
               </p>
             </div>
 
-            {/* Classic / GOTN tabs */}
+            {/* Classic / GOTN / AOW tabs */}
             <div className="flex items-center rounded-lg border border-border bg-surface-2 p-0.5">
-              <button
-                onClick={() => switchTab('classic')}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                  tab === 'classic' ? 'bg-accent text-bg' : 'text-muted hover:text-text'
-                }`}
-              >
-                Classic
-              </button>
-              <button
-                onClick={() => switchTab('gotn')}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                  tab === 'gotn' ? 'bg-accent text-bg' : 'text-muted hover:text-text'
-                }`}
-              >
-                Game of the Night
-              </button>
+              {TABS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  onClick={() => switchTab(id)}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                    tab === id ? 'bg-accent text-bg' : 'text-muted hover:text-text'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
             <div className="ml-auto flex items-center gap-1">

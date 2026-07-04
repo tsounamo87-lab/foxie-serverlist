@@ -49,13 +49,13 @@ export async function recordTeamSnapshot(games: EnrichedGame[], ts: number): Pro
   }
 }
 
-export async function queryTeamActivity(since: number, gotn = false): Promise<{
+export async function queryTeamActivity(since: number, type: import('./db').TeamType = 'classic'): Promise<{
   players: TeamPlayerAggregate[]
   totalObservations: number
 }> {
   const [rows, totalObservations] = await Promise.all([
-    getTeamPlayerStatsRpc(since, gotn),
-    countTeamObservationsSince(since, gotn),
+    getTeamPlayerStatsRpc(since, type),
+    countTeamObservationsSince(since, type),
   ])
 
   const players: TeamPlayerAggregate[] = rows.map((r) => ({
