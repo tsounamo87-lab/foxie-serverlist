@@ -673,15 +673,10 @@ export async function getTeamPlayerStatsRpc(since: number, type: TeamType = 'cla
 export async function countTeamObservationsSince(since: number, type: TeamType = 'classic'): Promise<number> {
   if (!supabaseConfigured) return 0
   let q = supabase!
-    .from('team_observations')
+    .from('team_buckets_cache')
     .select('*', { count: 'exact', head: true })
-    .gte('ts', since)
-  if (type === 'gotn') q = q.ilike('server_name', '%game of the night%')
-  else if (type === 'aow') q = q.ilike('server_name', '%aow%')
-  else {
-    q = q.not('server_name', 'ilike', '%game of the night%')
-    q = q.not('server_name', 'ilike', '%aow%')
-  }
+    .eq('type', type)
+  if (since > 0) q = q.gte('bucket_ts', since)
   const { count, error } = await q
   if (error) return 0
   return count ?? 0
