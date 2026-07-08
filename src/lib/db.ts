@@ -378,10 +378,11 @@ export async function getPlayerActivityRpc(since: number, maxRows = 30_000): Pro
  */
 export async function countObservationsSince(since: number): Promise<number> {
   if (!supabaseConfigured) return 0
-  const { count, error } = await supabase!
-    .from('observations')
+  let q = supabase!
+    .from('survival_buckets_cache')
     .select('*', { count: 'exact', head: true })
-    .gte('ts', since)
+  if (since > 0) q = q.gte('bucket_ts', since)
+  const { count, error } = await q
   if (error) return 0
   return count ?? 0
 }
