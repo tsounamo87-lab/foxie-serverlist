@@ -414,16 +414,19 @@ export async function upsertPlayerEcpBatch(
 ): Promise<void> {
   if (!supabaseConfigured || !entries.length) return
   const now = Date.now()
-  const rows = entries
-    .filter((e) => e.playerName?.trim())
-    .map((e) => ({
+  const rowMap = new Map<string, { player_name: string; badge: string | null; finish: string | null; laser: string | null; hue: number; updated_at: number }>()
+  for (const e of entries) {
+    if (!e.playerName?.trim()) continue
+    rowMap.set(e.playerName.trim().toLowerCase(), {
       player_name: e.playerName.trim(),
       badge:       e.custom.badge  ?? null,
       finish:      e.custom.finish ?? null,
       laser:       e.custom.laser  ?? null,
       hue:         e.custom.hue   ?? 0,
       updated_at:  now,
-    }))
+    })
+  }
+  const rows = [...rowMap.values()]
   if (!rows.length) return
   const { error } = await supabase!
     .from('player_ecp')
@@ -547,17 +550,21 @@ export async function upsertPlayerBadgeHistoryBatch(
   now: number,
 ): Promise<void> {
   if (!supabaseConfigured || !entries.length) return
-  const rows = entries
-    .filter((e) => e.playerName?.trim())
-    .map((e) => ({
+  const rowMap = new Map<string, { player_name: string; badge_key: string; badge: string; finish: string; laser: string; hue: number; ts: number }>()
+  for (const e of entries) {
+    if (!e.playerName?.trim()) continue
+    const badgeKey = `${e.custom.badge ?? ''}|${e.custom.finish ?? ''}|${e.custom.laser ?? ''}|${e.custom.hue ?? 0}`
+    rowMap.set(`${e.playerName.trim().toLowerCase()}|${badgeKey}`, {
       player_name: e.playerName.trim(),
-      badge_key:   `${e.custom.badge ?? ''}|${e.custom.finish ?? ''}|${e.custom.laser ?? ''}|${e.custom.hue ?? 0}`,
+      badge_key:   badgeKey,
       badge:       e.custom.badge   ?? '',
       finish:      e.custom.finish  ?? '',
       laser:       e.custom.laser   ?? '',
       hue:         e.custom.hue    ?? 0,
       ts:          now,
-    }))
+    })
+  }
+  const rows = [...rowMap.values()]
   if (!rows.length) return
   const { error } = await supabase!.rpc('upsert_badge_history_batch', { p_rows: rows })
   if (error) console.warn('[db] badge history batch error', error.message)
