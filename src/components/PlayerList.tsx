@@ -13,7 +13,7 @@ const MEDAL = ['#ffd24a', '#cdd4dc', '#cd8b54'] // gold / silver / bronze
 
 /** scrollable=true (default) → fixed-height column with overflow-y-auto (sidebar use)
  *  scrollable=false          → natural height, no inner scroll (flat layout use) */
-export function PlayerList({ players, mode = '', scrollable = true, connecting = false, expectedCount = 0 }: { players: Player[]; mode?: string; scrollable?: boolean; connecting?: boolean; expectedCount?: number }) {
+export function PlayerList({ players, mode = '', scrollable = true, connecting = false, expectedCount = 0, onSelectPlayer }: { players: Player[]; mode?: string; scrollable?: boolean; connecting?: boolean; expectedCount?: number; onSelectPlayer?: (name: string) => void }) {
   const { tags: clanTags } = useClans()
   const [clan, setClan] = useState('all')
   const [playerFilter, setPlayerFilter] = useState<PlayerFilter>('all')
@@ -159,10 +159,12 @@ export function PlayerList({ players, mode = '', scrollable = true, connecting =
               const glyph = shipGlyph(p.ship, mode)
               const col   = playerColor(p.hue, p.isAlive)
               const isEcp = !!p.custom
+              const clickable = !!onSelectPlayer && !!p.player_name
               return (
                 <tr
                   key={p.id}
-                  className={`border-t border-border/60 ${p.isAlive ? '' : 'opacity-45'} ${isEcp ? 'bg-accent/[0.03]' : ''}`}
+                  onClick={clickable ? () => onSelectPlayer!(p.player_name) : undefined}
+                  className={`border-t border-border/60 ${p.isAlive ? '' : 'opacity-45'} ${isEcp ? 'bg-accent/[0.03]' : ''} ${clickable ? 'cursor-pointer hover:bg-surface-2' : ''}`}
                 >
                   <td className="min-w-0 px-4 py-1.5">
                     <span className="flex min-w-0 items-center gap-1.5">

@@ -11,6 +11,7 @@ import { PlayerAvatar } from './PlayerAvatar'
 import { GameMap } from './GameMap'
 import { TeamSidebar } from './TeamSidebar'
 import { PlayerList } from './PlayerList'
+import { PlayerActivityModal } from './PlayerActivityModal'
 import { Sparkline } from './charts'
 
 export function ServerDetailModal({
@@ -77,6 +78,8 @@ export function ServerDetailModal({
   const [highlightedPlayerId, setHighlightedPlayerId] = useState<number | null>(null)
   // Reset highlight when switching games
   useEffect(() => { setHighlightedPlayerId(null) }, [game.key])
+
+  const [selectedPlayerName, setSelectedPlayerName] = useState<string | null>(null)
 
   // Cache the last non-empty player list so the roster stays visible while
   // the relay reconnects or before the DB fallback loads.
@@ -208,10 +211,11 @@ export function ServerDetailModal({
             <div className="min-h-0 border-t border-border md:border-l md:border-t-0">
               {effectiveModeInfo?.teams?.length
                 ? <TeamSidebar players={players} modeInfo={effectiveModeInfo} teamStats={relay.teamStats}
-                    highlightedPlayerId={highlightedPlayerId} onPlayerClick={setHighlightedPlayerId} />
+                    highlightedPlayerId={highlightedPlayerId} onPlayerClick={setHighlightedPlayerId}
+                    onSelectPlayer={setSelectedPlayerName} />
                 : <PlayerList players={players} mode={game.mode}
                     connecting={!hasLive && relay.connected}
-                    expectedCount={game.players} />
+                    expectedCount={game.players} onSelectPlayer={setSelectedPlayerName} />
               }
             </div>
           </div>
@@ -224,12 +228,12 @@ export function ServerDetailModal({
                   modeInfo={effectiveModeInfo} asteroidGrid={effectiveAsteroidGrid} />
               </div>
               <MiniStats players={players} stats={stats} game={game} history={history} />
-              <ClanSection players={players} mode={game.mode} compact />
+              <ClanSection players={players} mode={game.mode} compact onSelectPlayer={setSelectedPlayerName} />
             </div>
             <div className="min-h-0 border-t border-border md:border-l md:border-t-0">
               <PlayerList players={players} mode={game.mode}
                 connecting={!hasLive && relay.connected}
-                expectedCount={game.players} />
+                expectedCount={game.players} onSelectPlayer={setSelectedPlayerName} />
             </div>
           </div>
         ) : isSurvival && !game.open && !hasLive ? (
@@ -253,19 +257,24 @@ export function ServerDetailModal({
             <div className="space-y-4 p-4">
               <MiniStats players={players} stats={stats} game={game} history={history} />
               <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_300px]">
-                <ClanSection players={players} mode={game.mode} />
+                <ClanSection players={players} mode={game.mode} onSelectPlayer={setSelectedPlayerName} />
                 <PlayerList
                   players={players}
                   mode={game.mode}
                   scrollable={false}
                   connecting={!hasLive && relay.connected}
                   expectedCount={game.players}
+                  onSelectPlayer={setSelectedPlayerName}
                 />
               </div>
             </div>
           </div>
         )}
       </div>
+
+      {selectedPlayerName && (
+        <PlayerActivityModal playerName={selectedPlayerName} onClose={() => setSelectedPlayerName(null)} />
+      )}
     </div>
   )
 }
@@ -305,12 +314,17 @@ function MiniStat({ icon, label, value }: { icon: React.ReactNode; label: string
 }
 
 // ── Player chip — small colored pill used in ClanSection ─────────────────────
-function PlayerChip({ p, mode = '' }: { p: Player; mode?: string }) {
+function PlayerChip({ p, mode = '', onSelectPlayer }: { p: Player; mode?: string; onSelectPlayer?: (name: string) => void }) {
   const col   = playerColor(p.hue, p.isAlive)
   const glyph = shipGlyph(p.ship, mode)
   const isEcp = !!p.custom
+  const clickable = !!onSelectPlayer && !!p.player_name
+  const Tag = clickable ? 'button' : 'span'
   return (
-    <span className={`inline-flex items-center gap-1 rounded-md bg-surface px-2 py-0.5 text-[11px] transition-opacity border ${isEcp ? 'border-accent/35' : 'border-border/40'} ${p.isAlive ? '' : 'opacity-40'}`}>
+    <Tag
+      onClick={clickable ? () => onSelectPlayer!(p.player_name) : undefined}
+      className={`inline-flex items-center gap-1 rounded-md bg-surface px-2 py-0.5 text-[11px] transition-opacity border ${isEcp ? 'border-accent/35' : 'border-border/40'} ${p.isAlive ? '' : 'opacity-40'} ${clickable ? 'hover:border-accent/60 cursor-pointer' : ''}`}
+    >
       <PlayerAvatar player={p} size="sm" />
       {glyph && (
         <span className="shrink-0 leading-none" style={{ fontFamily: 'StarblastVanilla', fontSize: 12, color: col }}>
@@ -318,14 +332,14 @@ function PlayerChip({ p, mode = '' }: { p: Player; mode?: string }) {
         </span>
       )}
       <span className={`max-w-[110px] truncate ${isEcp ? 'text-accent/90' : ''}`}>{p.player_name || '?'}</span>
-    </span>
+    </Tag>
   )
 }
 
 // ── Clan + players overview ───────────────────────────────────────────────────
 // compact=true → used below a map (no card wrapper, tighter spacing)
 // compact=false (default) → standalone card layout for the no-map view
-function ClanSection({ players, mode = '', compact = false }: { players: Player[]; mode?: string; compact?: boolean }) {
+function ClanSection({ players, mode = '', compact = false, onSelectPlayer }: { players: Player[]; mode?: string; compact?: boolean; onSelectPlayer?: (name: string) => void }) {
   const { tags: clanTags } = useClans()
 
   const { clanGroups, untagged, topKillers } = useMemo(() => {
@@ -373,7 +387,7 @@ function ClanSection({ players, mode = '', compact = false }: { players: Player[
             <span className="text-[11px] text-muted">{members.length} player{members.length !== 1 ? 's' : ''}</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {members.map(p => <PlayerChip key={p.id} p={p} mode={mode} />)}
+            {members.map(p => <PlayerChip key={p.id} p={p} mode={mode} onSelectPlayer={onSelectPlayer} />)}
           </div>
         </div>
       ))}
@@ -387,7 +401,7 @@ function ClanSection({ players, mode = '', compact = false }: { players: Player[
             <span className="ml-auto font-normal normal-case text-text/40">{untagged.length}</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {untagged.map(p => <PlayerChip key={p.id} p={p} mode={mode} />)}
+            {untagged.map(p => <PlayerChip key={p.id} p={p} mode={mode} onSelectPlayer={onSelectPlayer} />)}
           </div>
         </div>
       )}
@@ -403,17 +417,23 @@ function ClanSection({ players, mode = '', compact = false }: { players: Player[
             {topKillers.map((p, i) => {
               const pct = Math.round(((p.kills ?? 0) / (topKillers[0].kills ?? 1)) * 100)
               const col = playerColor(p.hue, p.isAlive)
+              const clickable = !!onSelectPlayer && !!p.player_name
+              const Row = clickable ? 'button' : 'div'
               return (
-                <div key={p.id} className="flex items-center gap-2">
+                <Row
+                  key={p.id}
+                  onClick={clickable ? () => onSelectPlayer!(p.player_name) : undefined}
+                  className={`flex w-full items-center gap-2 ${clickable ? 'cursor-pointer hover:opacity-80' : ''}`}
+                >
                   <span className="w-3.5 shrink-0 text-[10px] tabular-nums text-muted/60">{i + 1}</span>
                   <span className="size-1.5 shrink-0 rounded-full" style={{ background: col }} />
-                  <span className="min-w-0 flex-1 truncate text-xs text-text">{p.player_name || 'Unknown'}</span>
+                  <span className="min-w-0 flex-1 truncate text-left text-xs text-text">{p.player_name || 'Unknown'}</span>
                   {/* Progress bar */}
                   <div className="h-1 w-16 overflow-hidden rounded-full bg-surface">
                     <div className="h-full rounded-full bg-danger/50 transition-all" style={{ width: `${pct}%` }} />
                   </div>
                   <span className="w-7 shrink-0 text-right text-xs font-bold tabular-nums text-danger/80">{p.kills ?? 0}</span>
-                </div>
+                </Row>
               )
             })}
           </div>
