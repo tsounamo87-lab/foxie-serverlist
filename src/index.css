@@ -313,6 +313,7 @@
 /* ------------------------------------------------------------------ */
 :root {
   --app-font: 'Inter', system-ui, -apple-system, sans-serif;
+  --app-font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --app-radius: 0.9rem;
 }
 [data-font='space'] { --app-font: 'Space Grotesk', system-ui, sans-serif; }
@@ -395,15 +396,6 @@ html[data-effects='off'] * {
   to { opacity: 1; transform: translateY(0); }
 }
 .animate-fade-up { animation: fade-up 0.3s ease both; }
-
-/* ------------------------------------------------------------------ */
-/*  Default font: Sora (more distinctive than Inter)                   */
-/* ------------------------------------------------------------------ */
-:root {
-  --app-font: 'Sora', system-ui, -apple-system, sans-serif;
-  --app-font-mono: 'JetBrains Mono', ui-monospace, monospace;
-  --app-radius: 0.9rem;
-}
 
 /* ------------------------------------------------------------------ */
 /*  Premium keyframes                                                   */
