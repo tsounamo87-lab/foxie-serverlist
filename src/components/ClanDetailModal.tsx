@@ -152,7 +152,7 @@ export function ClanDetailModal({ clan, onClose }: Props) {
       {/* Player detail stacked on top */}
       {selectedMember && (
         <PlayerActivityModal
-          player={selectedMember}
+          playerName={selectedMember.playerName}
           onClose={() => setSelectedMember(null)}
         />
       )}

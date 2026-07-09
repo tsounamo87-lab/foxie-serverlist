@@ -541,8 +541,7 @@ export function SurvivalActivity({ onClose }: Props) {
       {/* Player detail */}
       {selected && (
         <PlayerActivityModal
-          player={selected}
-          ecpCustom={ecpMap.get(selected.playerName.toLowerCase().trim()) ?? null}
+          playerName={selected.playerName}
           onClose={() => setSelected(null)}
         />
       )}

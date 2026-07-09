@@ -751,3 +751,119 @@ export async function toggleNotificationSubscription(id: string, enabled: boolea
     .eq('id', id)
   if (error) console.warn('[db] subscription toggle error:', error.message)
 }
+
+// ── Single-player profile lookups ──────────────────────────────────────────────
+// Reuse the same server-side RPCs as the leaderboards (get_player_stats_fast /
+// get_team_player_stats_fast) but filter the RPC's own output down to one row
+// via PostgREST — a single lightweight request instead of paginating the whole
+// leaderboard just to pick out one name.
+
+/** All-time survival totals for a single player, or null if they have none. */
+export async function getPlayerSurvivalTotals(playerName: string): Promise<PlayerActivityRow | null> {
+  if (!supabaseConfigured || !playerName?.trim()) return null
+  const { data, error } = await supabase!
+    .rpc('get_player_stats_fast', { p_since: 0 })
+    .eq('player_name', playerName)
+  if (error || !data?.length) return null
+  const r = data[0] as {
+    player_name: string; total_kills: number; total_dur_ms: number
+    session_count: number; max_score: number; last_seen_ts: number; regions: string[]
+  }
+  return {
+    playerName:      r.player_name,
+    totalKills:      Number(r.total_kills),
+    totalDurationMs: Number(r.total_dur_ms),
+    sessionCount:    Number(r.session_count),
+    maxScore:        Number(r.max_score),
+    lastSeen:        Number(r.last_seen_ts),
+    regions:         r.regions ?? [],
+  }
+}
+
+/** All-time team totals for a single player in one team type, or null if they have none. */
+export async function getPlayerTeamTotals(playerName: string, type: TeamType): Promise<TeamPlayerRow | null> {
+  if (!supabaseConfigured || !playerName?.trim()) return null
+  const { data, error } = await supabase!
+    .rpc('get_team_player_stats_fast', { p_since: 0, p_type: type })
+    .eq('player_name', playerName)
+  if (error || !data?.length) return null
+  const r = data[0] as {
+    player_name: string; total_dur_ms: number; session_count: number
+    max_score: number; last_seen_ts: number; regions: string[]
+  }
+  return {
+    playerName:      r.player_name,
+    totalDurationMs: Number(r.total_dur_ms),
+    sessionCount:    Number(r.session_count),
+    maxScore:        Number(r.max_score),
+    lastSeen:        Number(r.last_seen_ts),
+    regions:         r.regions ?? [],
+  }
+}
+
+/** Current ECP customization for a single player, or null if never seen with one. */
+export async function getPlayerEcp(playerName: string): Promise<PlayerCustom | null> {
+  if (!supabaseConfigured || !playerName?.trim()) return null
+  const { data, error } = await supabase!
+    .from('player_ecp')
+    .select('badge, finish, laser, hue')
+    .eq('player_name', playerName)
+    .maybeSingle()
+  if (error || !data) return null
+  const row = data as { badge: string | null; finish: string | null; laser: string | null; hue: number }
+  return { badge: row.badge ?? undefined, finish: row.finish ?? undefined, laser: row.laser ?? undefined, hue: row.hue }
+}
+
+/** Fetch all recent raw observations for a specific player from a given table. */
+async function getRecentRows(
+  table: 'observations' | 'team_observations',
+  playerName: string,
+): Promise<{ server_id: string; ts: number }[]> {
+  const { data, error } = await supabase!
+    .from(table)
+    .select('server_id, ts')
+    .eq('player_name', playerName)
+  if (error) return []
+  return (data ?? []) as { server_id: string; ts: number }[]
+}
+
+export interface RecentTeammate {
+  playerName: string
+  encounters: number
+}
+
+/**
+ * Players who shared the exact same (server, timestamp bucket) as `playerName`
+ * recently. Raw observation tables only retain a short rolling window (a few
+ * hours), so this reflects recent games only — not lifetime history.
+ */
+export async function getRecentTeammates(
+  playerName: string,
+  table: 'observations' | 'team_observations' = 'observations',
+): Promise<RecentTeammate[]> {
+  if (!supabaseConfigured || !playerName?.trim()) return []
+
+  const own = await getRecentRows(table, playerName)
+  if (!own.length) return []
+
+  const serverIds = [...new Set(own.map((r) => r.server_id))]
+  const ownKeys    = new Set(own.map((r) => `${r.server_id}\x00${r.ts}`))
+
+  const { data, error } = await supabase!
+    .from(table)
+    .select('server_id, ts, player_name')
+    .in('server_id', serverIds)
+    .neq('player_name', playerName)
+  if (error || !data) return []
+
+  const counts = new Map<string, number>()
+  for (const row of data as { server_id: string; ts: number; player_name: string }[]) {
+    if (!ownKeys.has(`${row.server_id}\x00${row.ts}`)) continue
+    counts.set(row.player_name, (counts.get(row.player_name) ?? 0) + 1)
+  }
+
+  return [...counts.entries()]
+    .map(([name, encounters]) => ({ playerName: name, encounters }))
+    .sort((a, b) => b.encounters - a.encounters)
+    .slice(0, 8)
+}

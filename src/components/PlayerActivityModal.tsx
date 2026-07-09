@@ -1,8 +1,10 @@
-// ─── Player Activity Modal ────────────────────────────────────────────────────
-// Full detail view for a single player's survival history.
+// ─── Player Profile Modal ─────────────────────────────────────────────────────
+// Unified cross-mode profile for a single player: survival + team totals,
+// ECP/badge history, recent sessions, and recently-played-with players.
+// Self-sufficient — only needs a player name, fetches everything else itself.
 
 import { useEffect, useMemo, useState } from 'react'
-import { X, Swords, Clock, Target, Trophy, MapPin, RefreshCw } from 'lucide-react'
+import { X, Swords, Clock, Target, Trophy, MapPin, RefreshCw, Users, Shield } from 'lucide-react'
 import { useClans, detectClanTag } from '../store/clans'
 import { EcpBadge } from './EcpBadge'
 import { CheatBadge } from './CheatBadge'
@@ -10,14 +12,25 @@ import { analyzeEcp } from '../lib/ecpDetect'
 import type { CheatLevel } from '../lib/ecpDetect'
 import type { PlayerCustom } from '../lib/players'
 import {
-  type PlayerAggregate,
   type Session,
   computeSessions,
   fmtDuration,
   fmtRelative,
   killsPerDay,
 } from '../lib/survivalTracker'
-import { getPlayerObservationsByName, getPlayerBadgeHistory, type BadgeHistoryEntry } from '../lib/db'
+import {
+  getPlayerObservationsByName,
+  getPlayerBadgeHistory,
+  getPlayerSurvivalTotals,
+  getPlayerTeamTotals,
+  getPlayerEcp,
+  getRecentTeammates,
+  type BadgeHistoryEntry,
+  type PlayerActivityRow,
+  type TeamPlayerRow,
+  type RecentTeammate,
+  type TeamType,
+} from '../lib/db'
 
 function levelColor(l: CheatLevel): string {
   if (l === 'cheat')      return 'text-danger'
@@ -31,6 +44,8 @@ function levelMark(l: CheatLevel): string {
   if (l === 'clean')      return '✓'
   return ''
 }
+
+const TEAM_TYPE_LABEL: Record<TeamType, string> = { classic: 'Classic', gotn: 'GOTN', aow: 'AOW' }
 
 // ── Mini bar chart ────────────────────────────────────────────────────────────
 
@@ -127,36 +142,100 @@ function StatTile({
   )
 }
 
+// ── Team totals row ───────────────────────────────────────────────────────────
+
+function TeamTotalsRow({ type, totals }: { type: TeamType; totals: TeamPlayerRow }) {
+  return (
+    <div className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-3 border-b border-border/40 px-3 py-2 text-xs last:border-0">
+      <span className="w-14 shrink-0 font-semibold text-text">{TEAM_TYPE_LABEL[type]}</span>
+      <span className="text-muted">{totals.regions.join(', ') || '—'}</span>
+      <span className="tabular-nums text-muted">{fmtDuration(totals.totalDurationMs)}</span>
+      <span className="tabular-nums text-muted">{totals.sessionCount} sess.</span>
+      <span className="tabular-nums text-text/90">{totals.maxScore.toLocaleString()}</span>
+    </div>
+  )
+}
+
+// ── Recently played with ──────────────────────────────────────────────────────
+
+function TeammateChips({
+  title, teammates, onSelect,
+}: {
+  title: string
+  teammates: RecentTeammate[]
+  onSelect: (name: string) => void
+}) {
+  if (!teammates.length) return null
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+      <span className="shrink-0 text-muted">{title}</span>
+      {teammates.map((t) => (
+        <button
+          key={t.playerName}
+          onClick={() => onSelect(t.playerName)}
+          className="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-text hover:border-accent hover:text-accent transition-colors"
+        >
+          {t.playerName} <span className="text-muted">×{t.encounters}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
+const TEAM_TYPES: TeamType[] = ['classic', 'gotn', 'aow']
+
 interface Props {
-  player:     PlayerAggregate
-  ecpCustom?: PlayerCustom | null
+  playerName: string
   onClose:    () => void
 }
 
-export function PlayerActivityModal({ player, ecpCustom, onClose }: Props) {
+export function PlayerActivityModal({ playerName, onClose }: Props) {
   const { tags: clanTags } = useClans()
-  const [playerSessions, setPlayerSessions] = useState<Session[]>([])
+
+  // The currently-viewed player can change internally when a teammate chip is
+  // clicked, so the modal can be browsed without closing/reopening it.
+  const [viewName, setViewName] = useState(playerName)
+  useEffect(() => setViewName(playerName), [playerName])
+
+  const [loading, setLoading] = useState(true)
+  const [survivalTotals, setSurvivalTotals] = useState<PlayerActivityRow | null>(null)
+  const [teamTotals, setTeamTotals] = useState<Partial<Record<TeamType, TeamPlayerRow>>>({})
+  const [ecp, setEcp] = useState<PlayerCustom | null>(null)
   const [badgeHistory, setBadgeHistory] = useState<BadgeHistoryEntry[]>([])
-  const [sessionsLoading, setSessionsLoading] = useState(true)
+  const [playerSessions, setPlayerSessions] = useState<Session[]>([])
+  const [survivalMates, setSurvivalMates] = useState<RecentTeammate[]>([])
+  const [teamMates, setTeamMates] = useState<RecentTeammate[]>([])
 
   useEffect(() => {
     let cancelled = false
     async function load() {
-      setSessionsLoading(true)
-      const [obs, hist] = await Promise.all([
-        getPlayerObservationsByName(player.playerName),
-        getPlayerBadgeHistory(player.playerName),
+      setLoading(true)
+      const [survTotals, classic, gotn, aow, ecpRow, hist, obs, surMates, tMates] = await Promise.all([
+        getPlayerSurvivalTotals(viewName),
+        getPlayerTeamTotals(viewName, 'classic'),
+        getPlayerTeamTotals(viewName, 'gotn'),
+        getPlayerTeamTotals(viewName, 'aow'),
+        getPlayerEcp(viewName),
+        getPlayerBadgeHistory(viewName),
+        getPlayerObservationsByName(viewName),
+        getRecentTeammates(viewName, 'observations'),
+        getRecentTeammates(viewName, 'team_observations'),
       ])
       if (cancelled) return
-      setPlayerSessions(computeSessions(obs))
+      setSurvivalTotals(survTotals)
+      setTeamTotals({ classic: classic ?? undefined, gotn: gotn ?? undefined, aow: aow ?? undefined })
+      setEcp(ecpRow)
       setBadgeHistory(hist)
-      setSessionsLoading(false)
+      setPlayerSessions(computeSessions(obs))
+      setSurvivalMates(surMates)
+      setTeamMates(tMates)
+      setLoading(false)
     }
     void load()
     return () => { cancelled = true }
-  }, [player.playerName])
+  }, [viewName])
 
   const allSnaps: { custom: PlayerCustom; ts: number; isCurrent?: boolean }[] = useMemo(() => {
     if (badgeHistory.length > 0) {
@@ -165,13 +244,22 @@ export function PlayerActivityModal({ player, ecpCustom, onClose }: Props) {
         ts: h.lastSeen,
       }))
     }
-    if (ecpCustom) return [{ custom: ecpCustom, ts: Date.now(), isCurrent: true }]
+    if (ecp) return [{ custom: ecp, ts: Date.now(), isCurrent: true }]
     return []
-  }, [badgeHistory, ecpCustom])
+  }, [badgeHistory, ecp])
 
   const [selectedSnap, setSelectedSnap] = useState<{ custom: PlayerCustom; ts: number } | null>(null)
+  useEffect(() => setSelectedSnap(null), [viewName])
 
-  const clan = detectClanTag(player.playerName, clanTags)
+  const clan = detectClanTag(viewName, clanTags)
+  const ecpAnalysis = analyzeEcp(ecp)
+
+  const activeTeamTypes = TEAM_TYPES.filter((t) => teamTotals[t])
+  const lastSeen = Math.max(survivalTotals?.lastSeen ?? 0, ...activeTeamTypes.map((t) => teamTotals[t]!.lastSeen))
+  const allRegions = [...new Set([
+    ...(survivalTotals?.regions ?? []),
+    ...activeTeamTypes.flatMap((t) => teamTotals[t]!.regions),
+  ])]
 
   return (
     <div
@@ -186,15 +274,19 @@ export function PlayerActivityModal({ player, ecpCustom, onClose }: Props) {
         <div className="flex items-start justify-between gap-3 border-b border-border p-4">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-text">{player.playerName}</h2>
+              <h2 className="text-lg font-bold text-text">{viewName}</h2>
               {clan && (
                 <span className="rounded bg-accent-soft px-1.5 py-0.5 text-xs font-semibold text-accent">
                   [{clan}]
                 </span>
               )}
+              {ecpAnalysis && ecpAnalysis.overall !== 'clean' && (
+                <CheatBadge custom={ecp} playerName={viewName} />
+              )}
             </div>
             <p className="mt-0.5 text-xs text-muted">
-              Last seen {fmtRelative(player.lastSeen)} · {player.regions.join(', ')}
+              {lastSeen > 0 ? `Last seen ${fmtRelative(lastSeen)}` : 'No recorded activity'}
+              {allRegions.length > 0 && ` · ${allRegions.join(', ')}`}
             </p>
           </div>
           <button
@@ -207,32 +299,58 @@ export function PlayerActivityModal({ player, ecpCustom, onClose }: Props) {
 
         {/* Scrollable body */}
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
-          {/* Stats grid */}
-          <div className="grid grid-cols-4 gap-2">
-            <StatTile
-              icon={<Swords className="size-3.5" />}
-              label="Total kills"
-              value={player.totalKills}
-            />
-            <StatTile
-              icon={<Clock className="size-3.5" />}
-              label="Play time"
-              value={fmtDuration(player.totalDurationMs)}
-            />
-            <StatTile
-              icon={<Target className="size-3.5" />}
-              label="Sessions"
-              value={player.sessionCount}
-            />
-            <StatTile
-              icon={<Trophy className="size-3.5" />}
-              label="Best score"
-              value={player.maxScore.toLocaleString()}
-            />
-          </div>
+          {loading && (
+            <div className="flex items-center justify-center gap-2 p-6 text-xs text-muted">
+              <RefreshCw className="size-3.5 animate-spin" /> Loading profile…
+            </div>
+          )}
+
+          {!loading && !survivalTotals && activeTeamTypes.length === 0 && badgeHistory.length === 0 && !ecp && (
+            <p className="p-6 text-center text-xs text-muted">No recorded activity for this player yet.</p>
+          )}
+
+          {/* Survival stats */}
+          {survivalTotals && (
+            <div>
+              <div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted">
+                <Target className="size-3" /> Survival
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                <StatTile icon={<Swords className="size-3.5" />} label="Total kills" value={survivalTotals.totalKills} />
+                <StatTile icon={<Clock className="size-3.5" />} label="Play time" value={fmtDuration(survivalTotals.totalDurationMs)} />
+                <StatTile icon={<Target className="size-3.5" />} label="Sessions" value={survivalTotals.sessionCount} />
+                <StatTile icon={<Trophy className="size-3.5" />} label="Best score" value={survivalTotals.maxScore.toLocaleString()} />
+              </div>
+            </div>
+          )}
+
+          {/* Team stats */}
+          {activeTeamTypes.length > 0 && (
+            <div>
+              <div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted">
+                <Shield className="size-3" /> Team
+              </div>
+              <div className="rounded-lg border border-border">
+                {activeTeamTypes.map((t) => (
+                  <TeamTotalsRow key={t} type={t} totals={teamTotals[t]!} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Recently played with */}
+          {(survivalMates.length > 0 || teamMates.length > 0) && (
+            <div className="space-y-1.5 rounded-lg border border-border bg-surface-2 p-3">
+              <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted">
+                <Users className="size-3" /> Recently played with
+              </div>
+              <TeammateChips title="Survival:" teammates={survivalMates} onSelect={setViewName} />
+              <TeammateChips title="Team:" teammates={teamMates} onSelect={setViewName} />
+            </div>
+          )}
 
           {/* Kills per day chart */}
-          <KillsChart sessions={playerSessions} />
+          {playerSessions.length > 0 && <KillsChart sessions={playerSessions} />}
 
           {/* ECP Badge history — click any badge to reveal its materials */}
           {allSnaps.length > 0 && (
@@ -341,26 +459,20 @@ export function PlayerActivityModal({ player, ecpCustom, onClose }: Props) {
             </div>
           )}
 
-          {/* Sessions list */}
-          <div className="rounded-lg border border-border">
-            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 border-b border-border px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted">
-              <span>Server</span>
-              <span>Duration</span>
-              <span className="w-14 text-right">Kills</span>
-              <span className="w-16 text-right">Score</span>
+          {/* Recent sessions (survival — raw retention is a short rolling window) */}
+          {playerSessions.length > 0 && (
+            <div className="rounded-lg border border-border">
+              <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 border-b border-border px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted">
+                <span>Recent sessions (survival)</span>
+                <span>Duration</span>
+                <span className="w-14 text-right">Kills</span>
+                <span className="w-16 text-right">Score</span>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                {playerSessions.map((s, i) => <SessionRow key={i} session={s} />)}
+              </div>
             </div>
-            <div className="max-h-64 overflow-y-auto">
-              {sessionsLoading ? (
-                <div className="flex items-center justify-center gap-2 p-6 text-xs text-muted">
-                  <RefreshCw className="size-3.5 animate-spin" /> Loading sessions…
-                </div>
-              ) : playerSessions.length === 0 ? (
-                <p className="p-4 text-center text-xs text-muted">No sessions recorded.</p>
-              ) : (
-                playerSessions.map((s, i) => <SessionRow key={i} session={s} />)
-              )}
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

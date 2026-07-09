@@ -14,7 +14,6 @@ import { EcpBadge } from './EcpBadge'
 import { CheatBadge } from './CheatBadge'
 import { analyzeEcp, isLowercaseName } from '../lib/ecpDetect'
 import { PlayerActivityModal } from './PlayerActivityModal'
-import type { PlayerAggregate } from '../lib/survivalTracker'
 
 // ── Period picker ─────────────────────────────────────────────────────────────
 
@@ -218,17 +217,6 @@ export function TeamActivity({ onClose }: Props) {
 
   const hasData = players.length > 0
 
-  // Convert TeamPlayerAggregate → PlayerAggregate shape for the modal
-  const toModalPlayer = (p: TeamPlayerAggregate): PlayerAggregate => ({
-    playerName:      p.playerName,
-    totalKills:      0,
-    totalDurationMs: p.totalDurationMs,
-    sessionCount:    p.sessionCount,
-    maxScore:        p.maxScore,
-    lastSeen:        p.lastSeen,
-    regions:         p.regions,
-  })
-
   return (
     <>
       <div
@@ -389,8 +377,7 @@ export function TeamActivity({ onClose }: Props) {
 
       {selected && (
         <PlayerActivityModal
-          player={toModalPlayer(selected)}
-          ecpCustom={ecpMap.get(selected.playerName.toLowerCase().trim()) ?? null}
+          playerName={selected.playerName}
           onClose={() => setSelected(null)}
         />
       )}
