@@ -101,12 +101,14 @@ export function GameMap({
   size = 560,
   modeInfo,
   asteroidGrid,
+  highlightedPlayerId = null,
 }: {
   players: Player[]
   mode: string
   size?: number
   modeInfo?: RelayModeInfo | null
   asteroidGrid?: string | null
+  highlightedPlayerId?: number | null
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -124,14 +126,16 @@ export function GameMap({
   const activePosRef    = useRef<PosLog | null>(null)
   const lastTickRef     = useRef<number>(Date.now())
   const profilesRef     = useRef<Map<number, Profile>>(new Map())
-  const halfRef         = useRef(half)
-  const dotsRef         = useRef(asteroidDots)
-  const modeRef         = useRef(mode)
-  const modeInfoRef     = useRef(modeInfo)
-  halfRef.current     = half
-  dotsRef.current     = asteroidDots
-  modeRef.current     = mode
-  modeInfoRef.current = modeInfo
+  const halfRef            = useRef(half)
+  const dotsRef            = useRef(asteroidDots)
+  const modeRef            = useRef(mode)
+  const modeInfoRef        = useRef(modeInfo)
+  const highlightedIdRef   = useRef<number | null>(highlightedPlayerId)
+  halfRef.current          = half
+  dotsRef.current          = asteroidDots
+  modeRef.current          = mode
+  modeInfoRef.current      = modeInfo
+  highlightedIdRef.current = highlightedPlayerId
 
   // ── On each relay frame: push to log, update profiles ─────────────────
   useEffect(() => {
@@ -366,6 +370,20 @@ export function GameMap({
           const screenY = py(pos.y)
           const glyph   = shipGlyph(pos.ship, m)
           const color   = playerColor(prof.hue, true)
+          const isHighlighted = highlightedIdRef.current !== null && id === highlightedIdRef.current
+
+          if (isHighlighted) {
+            const pulse = 0.65 + 0.35 * Math.sin(tickNow / 300)
+            ctx.save()
+            ctx.beginPath()
+            ctx.arc(screenX, screenY, glyph ? 16 : 10, 0, Math.PI * 2)
+            ctx.strokeStyle = `rgba(255,255,255,${pulse.toFixed(2)})`
+            ctx.lineWidth   = 2
+            ctx.shadowColor = '#ffffff'
+            ctx.shadowBlur  = 14
+            ctx.stroke()
+            ctx.restore()
+          }
 
           if (glyph) {
             ctx.save()

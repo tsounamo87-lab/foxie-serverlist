@@ -44,10 +44,14 @@ export function TeamSidebar({
   players,
   modeInfo,
   teamStats,
+  highlightedPlayerId = null,
+  onPlayerClick,
 }: {
   players: Player[]
   modeInfo: RelayModeInfo | null
   teamStats: TeamStat[] | null
+  highlightedPlayerId?: number | null
+  onPlayerClick?: (id: number | null) => void
 }) {
   const { tags: clanTags } = useClans()
   const [playerFilter, setPlayerFilter] = useState<PlayerFilter>('all')
@@ -176,11 +180,13 @@ export function TeamSidebar({
               const col = playerColor(p.hue, p.isAlive)
               const rankColor = i < 3 ? MEDAL[i] : undefined
               const isEcp = !!p.custom
+              const isSelected = p.id === highlightedPlayerId
 
               return (
                 <div
                   key={p.id}
-                  className={`flex items-center gap-1.5 border-b border-border/40 px-3 py-1 ${p.isAlive ? '' : 'opacity-45'} ${isEcp ? 'bg-accent/[0.03]' : ''}`}
+                  onClick={() => onPlayerClick?.(isSelected ? null : p.id)}
+                  className={`flex items-center gap-1.5 border-b border-border/40 px-3 py-1 transition-colors ${onPlayerClick ? 'cursor-pointer' : ''} ${p.isAlive ? '' : 'opacity-45'} ${isSelected ? 'bg-white/[0.07] outline outline-1 -outline-offset-1 outline-white/20' : isEcp ? 'bg-accent/[0.03] hover:bg-white/[0.04]' : 'hover:bg-white/[0.04]'}`}
                 >
                   <PlayerAvatar player={p} size="sm" />
 

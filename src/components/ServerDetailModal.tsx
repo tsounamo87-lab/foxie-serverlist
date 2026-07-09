@@ -74,6 +74,10 @@ export function ServerDetailModal({
     if (relay.players && relay.players.length > 0) setDbRoster([])
   }, [relay.players])
 
+  const [highlightedPlayerId, setHighlightedPlayerId] = useState<number | null>(null)
+  // Reset highlight when switching games
+  useEffect(() => { setHighlightedPlayerId(null) }, [game.key])
+
   // Cache the last non-empty player list so the roster stays visible while
   // the relay reconnects or before the DB fallback loads.
   const cachedPlayersRef = useRef<Player[]>([])
@@ -196,13 +200,15 @@ export function ServerDetailModal({
             <div className="flex min-w-0 flex-col gap-3 overflow-y-auto p-4">
               <div className="flex justify-center">
                 <GameMap players={players} mode={game.mode} size={520}
-                  modeInfo={effectiveModeInfo} asteroidGrid={effectiveAsteroidGrid} />
+                  modeInfo={effectiveModeInfo} asteroidGrid={effectiveAsteroidGrid}
+                  highlightedPlayerId={highlightedPlayerId} />
               </div>
               <MiniStats players={players} stats={stats} game={game} history={history} />
             </div>
             <div className="min-h-0 border-t border-border md:border-l md:border-t-0">
               {effectiveModeInfo?.teams?.length
-                ? <TeamSidebar players={players} modeInfo={effectiveModeInfo} teamStats={relay.teamStats} />
+                ? <TeamSidebar players={players} modeInfo={effectiveModeInfo} teamStats={relay.teamStats}
+                    highlightedPlayerId={highlightedPlayerId} onPlayerClick={setHighlightedPlayerId} />
                 : <PlayerList players={players} mode={game.mode}
                     connecting={!hasLive && relay.connected}
                     expectedCount={game.players} />
