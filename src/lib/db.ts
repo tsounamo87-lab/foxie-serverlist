@@ -488,6 +488,29 @@ export async function getPlayerEcpMap(): Promise<Map<string, PlayerCustom>> {
   return map
 }
 
+/**
+ * Players whose ECP composition matches `custom` exactly — same badge, finish,
+ * laser AND hue value (not just colour bucket). Queried server-side so casing
+ * is preserved and the whole registry never has to be paginated client-side.
+ */
+export async function getPlayersWithExactGear(custom: PlayerCustom, excludeName?: string): Promise<string[]> {
+  if (!supabaseConfigured) return []
+  const badge  = custom.badge && custom.badge !== 'blank' ? custom.badge : null
+  const finish = custom.finish ?? null
+  const laser  = custom.laser !== undefined && custom.laser !== null ? String(custom.laser) : '0'
+  const hue    = custom.hue ?? 0
+
+  let q = supabase!.from('player_ecp').select('player_name')
+  q = badge  === null ? q.or('badge.is.null,badge.eq.blank') : q.eq('badge', badge)
+  q = finish === null ? q.is('finish', null) : q.eq('finish', finish)
+  q = q.eq('laser', laser).eq('hue', hue)
+  if (excludeName) q = q.neq('player_name', excludeName)
+
+  const { data, error } = await q.limit(500)
+  if (error || !data) return []
+  return (data as { player_name: string }[]).map((r) => r.player_name).sort()
+}
+
 /** Fetch all observations for a specific player (no time limit). */
 export async function getPlayerObservationsByName(playerName: string): Promise<Observation[]> {
   if (!supabaseConfigured) return []

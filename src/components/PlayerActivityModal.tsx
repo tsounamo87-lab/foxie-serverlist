@@ -4,7 +4,7 @@
 // Self-sufficient — only needs a player name, fetches everything else itself.
 
 import { useEffect, useMemo, useState } from 'react'
-import { X, Swords, Clock, Target, Trophy, MapPin, RefreshCw, Users, Shield } from 'lucide-react'
+import { X, Swords, Clock, Target, Trophy, MapPin, RefreshCw, Users, Shield, Search } from 'lucide-react'
 import { useClans, detectClanTag } from '../store/clans'
 import { EcpBadge } from './EcpBadge'
 import { CheatBadge } from './CheatBadge'
@@ -25,6 +25,7 @@ import {
   getPlayerTeamTotals,
   getPlayerEcp,
   getRecentTeammates,
+  getPlayersWithExactGear,
   type BadgeHistoryEntry,
   type PlayerActivityRow,
   type TeamPlayerRow,
@@ -251,6 +252,17 @@ export function PlayerActivityModal({ playerName, onClose }: Props) {
   const [selectedSnap, setSelectedSnap] = useState<{ custom: PlayerCustom; ts: number } | null>(null)
   useEffect(() => setSelectedSnap(null), [viewName])
 
+  const [sameSetup, setSameSetup] = useState<string[] | null>(null)
+  const [sameSetupLoading, setSameSetupLoading] = useState(false)
+  useEffect(() => { setSameSetup(null) }, [viewName, selectedSnap])
+
+  async function handleFindSameSetup(custom: PlayerCustom) {
+    setSameSetupLoading(true)
+    const names = await getPlayersWithExactGear(custom, viewName)
+    setSameSetup(names)
+    setSameSetupLoading(false)
+  }
+
   const clan = detectClanTag(viewName, clanTags)
   const ecpAnalysis = analyzeEcp(ecp)
 
@@ -452,6 +464,37 @@ export function PlayerActivityModal({ playerName, onClose }: Props) {
                           </div>
                         )}
                       </div>
+                    </div>
+
+                    {/* Find players with this exact composition */}
+                    <div className="border-t border-border/60 pt-2">
+                      <button
+                        onClick={() => void handleFindSameSetup(c)}
+                        disabled={sameSetupLoading}
+                        className="flex items-center gap-1.5 text-xs text-accent hover:text-accent/80 disabled:opacity-50"
+                      >
+                        <Search className="size-3" />
+                        {sameSetupLoading ? 'Searching…' : 'Find players with this exact setup'}
+                      </button>
+
+                      {sameSetup && (
+                        sameSetup.length === 0 ? (
+                          <p className="mt-1.5 text-xs text-muted">No other player has this exact composition right now.</p>
+                        ) : (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs text-muted">{sameSetup.length} match{sameSetup.length !== 1 ? 'es' : ''}:</span>
+                            {sameSetup.map((name) => (
+                              <button
+                                key={name}
+                                onClick={() => setViewName(name)}
+                                className="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-text hover:border-accent hover:text-accent transition-colors"
+                              >
+                                {name}
+                              </button>
+                            ))}
+                          </div>
+                        )
+                      )}
                     </div>
                   </div>
                 )
