@@ -41,18 +41,37 @@ export interface EcpField {
 }
 
 export interface EcpAnalysis {
-  hasEcp:  boolean
-  finish:  EcpField | null
-  laser:   EcpField | null
-  badge:   EcpField | null
+  hasEcp:   boolean
+  finish:   EcpField | null
+  laser:    EcpField | null
+  badge:    EcpField | null
+  /** Raw matched value when the "Subspace" cheat client's fake ECP key is found, else null. */
+  subspace: string | null
   /** Worst level across all fields. */
   overall: 'clean' | 'suspicious' | 'cheat'
+}
+
+// ── Subspace cheat detection ──────────────────────────────────────────────────
+// The "Subspace" cheat client generates a fake ECP verification key instead of
+// a real (paid) one. We don't know the exact property name the game server
+// exposes it under, so every string value on the custom object is scanned
+// rather than relying on a fixed field.
+const SUBSPACE_SIGNATURE = /subspace/i
+
+export function findSubspaceSignature(custom: PlayerCustom | null | undefined): string | null {
+  if (!custom) return null
+  for (const value of Object.values(custom as Record<string, unknown>)) {
+    if (typeof value === 'string' && SUBSPACE_SIGNATURE.test(value)) return value
+  }
+  return null
 }
 
 // ── Core analysis ─────────────────────────────────────────────────────────────
 
 export function analyzeEcp(custom: PlayerCustom | null | undefined): EcpAnalysis | null {
   if (!custom) return null
+
+  const subspace = findSubspaceSignature(custom)
 
   // ── Finish ─────────────────────────────────────────────────────────────────
   let finish: EcpField | null = null
@@ -97,15 +116,16 @@ export function analyzeEcp(custom: PlayerCustom | null | undefined): EcpAnalysis
   const hasEcp = !!(
     custom.finish ||
     (laserRaw !== undefined && laserRaw !== null && laserRaw !== '') ||
-    (custom.badge && custom.badge !== 'blank')
+    (custom.badge && custom.badge !== 'blank') ||
+    subspace
   )
 
-  const levels = [finish?.level, laser?.level, badge?.level]
+  const levels = [finish?.level, laser?.level, badge?.level, subspace ? 'cheat' : null]
   let overall: EcpAnalysis['overall'] = 'clean'
   if (levels.includes('cheat'))      overall = 'cheat'
   else if (levels.includes('suspicious')) overall = 'suspicious'
 
-  return { hasEcp, finish, laser, badge, overall }
+  return { hasEcp, finish, laser, badge, subspace, overall }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -113,6 +133,7 @@ export function analyzeEcp(custom: PlayerCustom | null | undefined): EcpAnalysis
 /** Short tooltip-friendly summary of why ECP is flagged. */
 export function cheatSummary(a: EcpAnalysis): string {
   const parts: string[] = []
+  if (a.subspace) parts.push('Subspace cheat client detected')
   if (a.finish && a.finish.level !== 'clean' && a.finish.level !== 'none')
     parts.push(`Finish: "${a.finish.value}"`)
   if (a.laser && a.laser.level !== 'clean' && a.laser.level !== 'none')

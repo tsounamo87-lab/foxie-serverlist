@@ -26,7 +26,8 @@ export function CheatBadge({ custom, playerName, variant = 'modified' }: Props) 
   if (!hasEcpIssue && !isLower) return null
 
   // Severity: confirmed cheat = ECP illegal fields OR lowercase name
-  const isCheat = (ecp?.overall === 'cheat') || isLower
+  const isCheat    = (ecp?.overall === 'cheat') || isLower
+  const isSubspace = !!ecp?.subspace
 
   const reasons: string[] = []
   if (isLower) reasons.push('Lowercase name (modified client)')
@@ -55,7 +56,7 @@ export function CheatBadge({ custom, playerName, variant = 'modified' }: Props) 
           : 'border-accent-2/40 bg-accent-2/10 text-accent-2'
       }`}
     >
-      Modified
+      {isSubspace ? 'Subspace' : 'Modified'}
     </span>
   )
 }
