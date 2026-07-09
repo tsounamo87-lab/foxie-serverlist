@@ -30,6 +30,8 @@ import { EcpBadge } from './EcpBadge'
 import { CheatBadge } from './CheatBadge'
 import { analyzeEcp, isLowercaseName } from '../lib/ecpDetect'
 import { ErrorBoundary } from './ErrorBoundary'
+import { GearFilterBar } from './GearFilterBar'
+import { EMPTY_GEAR_FILTER, matchesGearFilter, type GearFilter } from '../lib/gearFilter'
 
 // ── Period picker ─────────────────────────────────────────────────────────────
 
@@ -267,6 +269,7 @@ export function SurvivalActivity({ onClose }: Props) {
 
   type EcpFilter = 'all' | 'ecp' | 'no-ecp' | 'modified'
   const [ecpFilter, setEcpFilter] = useState<EcpFilter>('all')
+  const [gearFilter, setGearFilter] = useState<GearFilter>(EMPTY_GEAR_FILTER)
   // Pagination: show rows in batches of PAGE_SIZE to avoid rendering 1000+ rows at once
   const PAGE_SIZE = 100
   const [displayLimit, setDisplayLimit] = useState(PAGE_SIZE)
@@ -290,8 +293,9 @@ export function SurvivalActivity({ onClose }: Props) {
         return (a !== null && a.overall !== 'clean') || isLowercaseName(p.playerName)
       })
     }
+    base = base.filter((p) => matchesGearFilter(ecpMap.get(p.playerName.toLowerCase().trim()) ?? null, gearFilter))
     return sorted(base, sortKey, sortAsc)
-  }, [players, search, sortKey, sortAsc, ecpFilter, ecpMap])
+  }, [players, search, sortKey, sortAsc, ecpFilter, ecpMap, gearFilter])
 
   // Reset pagination when filter/sort/search changes
   useEffect(() => { setDisplayLimit(PAGE_SIZE) }, [filtered])
@@ -430,6 +434,8 @@ export function SurvivalActivity({ onClose }: Props) {
                     {filtered.length} players
                   </span>
                 </div>
+
+                <GearFilterBar value={gearFilter} onChange={setGearFilter} />
 
                 {/* Table header */}
                 <div className={`grid ${COL_GRID} items-center gap-3 border-b border-border bg-surface-2/50 px-3 py-2`}>

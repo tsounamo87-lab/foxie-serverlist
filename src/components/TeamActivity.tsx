@@ -14,6 +14,8 @@ import { EcpBadge } from './EcpBadge'
 import { CheatBadge } from './CheatBadge'
 import { analyzeEcp, isLowercaseName } from '../lib/ecpDetect'
 import { PlayerActivityModal } from './PlayerActivityModal'
+import { GearFilterBar } from './GearFilterBar'
+import { EMPTY_GEAR_FILTER, matchesGearFilter, type GearFilter } from '../lib/gearFilter'
 
 // ── Period picker ─────────────────────────────────────────────────────────────
 
@@ -152,6 +154,7 @@ export function TeamActivity({ onClose }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('score')
   const [sortAsc, setSortAsc] = useState(false)
   const [ecpFilter, setEcpFilter] = useState<EcpFilter>('all')
+  const [gearFilter, setGearFilter] = useState<GearFilter>(EMPTY_GEAR_FILTER)
   const [displayLimit, setDisplayLimit] = useState(PAGE_SIZE)
   const [selected, setSelected] = useState<TeamPlayerAggregate | null>(null)
 
@@ -187,6 +190,7 @@ export function TeamActivity({ onClose }: Props) {
     setSortKey('score')
     setSortAsc(false)
     setEcpFilter('all')
+    setGearFilter(EMPTY_GEAR_FILTER)
     setDisplayLimit(PAGE_SIZE)
     setSelected(null)
   }
@@ -210,8 +214,9 @@ export function TeamActivity({ onClose }: Props) {
         return (a !== null && a.overall !== 'clean') || isLowercaseName(p.playerName)
       })
     }
+    base = base.filter((p) => matchesGearFilter(ecpMap.get(p.playerName.toLowerCase().trim()) ?? null, gearFilter))
     return sortPlayers(base, sortKey, sortAsc)
-  }, [players, search, sortKey, sortAsc, ecpFilter, ecpMap])
+  }, [players, search, sortKey, sortAsc, ecpFilter, ecpMap, gearFilter])
 
   useEffect(() => { setDisplayLimit(PAGE_SIZE) }, [filtered])
 
@@ -326,6 +331,8 @@ export function TeamActivity({ onClose }: Props) {
                     {filtered.length} players
                   </span>
                 </div>
+
+                <GearFilterBar value={gearFilter} onChange={setGearFilter} />
 
                 {/* Table header */}
                 <div className={`grid ${COL_GRID} items-center gap-3 border-b border-border bg-surface-2/50 px-3 py-2`}>
