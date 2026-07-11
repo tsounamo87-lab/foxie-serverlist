@@ -16,6 +16,7 @@ import { analyzeEcp, isLowercaseName } from '../lib/ecpDetect'
 import { PlayerActivityModal } from './PlayerActivityModal'
 import { GearFilterBar } from './GearFilterBar'
 import { EMPTY_GEAR_FILTER, matchesGearFilter, type GearFilter } from '../lib/gearFilter'
+import { MostUsedShip } from './MostUsedShip'
 
 // ── Period picker ─────────────────────────────────────────────────────────────
 
@@ -330,6 +331,7 @@ export function TeamActivity({ onClose }: Props) {
                     <Users className="size-3.5" />
                     {filtered.length} players
                   </span>
+                  <MostUsedShip table="team_observations" mode="team" />
                 </div>
 
                 <GearFilterBar value={gearFilter} onChange={setGearFilter} />

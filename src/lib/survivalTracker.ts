@@ -90,6 +90,7 @@ export async function recordSnapshot(games: EnrichedGame[], ts: number): Promise
         playerName: p.player_name.trim(),
         kills: p.kills ?? 0,
         score: p.score ?? 0,
+        ship: p.ship ?? 0,
       })
     }
   }

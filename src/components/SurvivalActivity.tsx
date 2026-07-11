@@ -32,6 +32,7 @@ import { analyzeEcp, isLowercaseName } from '../lib/ecpDetect'
 import { ErrorBoundary } from './ErrorBoundary'
 import { GearFilterBar } from './GearFilterBar'
 import { EMPTY_GEAR_FILTER, matchesGearFilter, type GearFilter } from '../lib/gearFilter'
+import { MostUsedShip } from './MostUsedShip'
 
 // ── Period picker ─────────────────────────────────────────────────────────────
 
@@ -433,6 +434,7 @@ export function SurvivalActivity({ onClose }: Props) {
                     <Users className="size-3.5" />
                     {filtered.length} players
                   </span>
+                  <MostUsedShip table="observations" mode="survival" />
                 </div>
 
                 <GearFilterBar value={gearFilter} onChange={setGearFilter} />

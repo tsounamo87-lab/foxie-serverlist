@@ -36,3 +36,5 @@ serverlist old ver (sans bot)/
 *.njsproj
 *.sln
 *.sw?
+
+supabase/.temp/

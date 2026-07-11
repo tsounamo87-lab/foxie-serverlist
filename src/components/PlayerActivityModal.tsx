@@ -26,12 +26,15 @@ import {
   getPlayerEcp,
   getRecentTeammates,
   getPlayersWithExactGear,
+  getPlayerShipUsage,
   type BadgeHistoryEntry,
   type PlayerActivityRow,
   type TeamPlayerRow,
   type RecentTeammate,
   type TeamType,
+  type ShipUsage,
 } from '../lib/db'
+import { shipGlyph, shipName } from '../lib/ships'
 
 function levelColor(l: CheatLevel): string {
   if (l === 'cheat')      return 'text-danger'
@@ -183,6 +186,35 @@ function TeammateChips({
   )
 }
 
+// ── Ship usage chips ───────────────────────────────────────────────────────────
+
+function ShipChips({ ships, mode }: { ships: ShipUsage[]; mode: string }) {
+  if (!ships.length) return null
+  const total = ships.reduce((s, u) => s + u.count, 0)
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+      <span className="shrink-0 text-muted">Ships:</span>
+      {ships.slice(0, 5).map((u) => {
+        const glyph = shipGlyph(u.ship, mode)
+        const pct = Math.round((u.count / total) * 100)
+        return (
+          <span
+            key={u.ship}
+            title={`${shipName(u.ship)} · ${pct}% of recent sightings`}
+            className="flex items-center gap-1 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-text"
+          >
+            {glyph && (
+              <span style={{ fontFamily: 'StarblastVanilla', fontSize: 13 }}>{glyph}</span>
+            )}
+            {shipName(u.ship)}
+            <span className="text-muted">{pct}%</span>
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 const TEAM_TYPES: TeamType[] = ['classic', 'gotn', 'aow']
@@ -208,12 +240,14 @@ export function PlayerActivityModal({ playerName, onClose }: Props) {
   const [playerSessions, setPlayerSessions] = useState<Session[]>([])
   const [survivalMates, setSurvivalMates] = useState<RecentTeammate[]>([])
   const [teamMates, setTeamMates] = useState<RecentTeammate[]>([])
+  const [survivalShips, setSurvivalShips] = useState<ShipUsage[]>([])
+  const [teamShips, setTeamShips] = useState<ShipUsage[]>([])
 
   useEffect(() => {
     let cancelled = false
     async function load() {
       setLoading(true)
-      const [survTotals, classic, gotn, aow, ecpRow, hist, obs, surMates, tMates] = await Promise.all([
+      const [survTotals, classic, gotn, aow, ecpRow, hist, obs, surMates, tMates, surShips, tShips] = await Promise.all([
         getPlayerSurvivalTotals(viewName),
         getPlayerTeamTotals(viewName, 'classic'),
         getPlayerTeamTotals(viewName, 'gotn'),
@@ -223,6 +257,8 @@ export function PlayerActivityModal({ playerName, onClose }: Props) {
         getPlayerObservationsByName(viewName),
         getRecentTeammates(viewName, 'observations'),
         getRecentTeammates(viewName, 'team_observations'),
+        getPlayerShipUsage(viewName, 'observations'),
+        getPlayerShipUsage(viewName, 'team_observations'),
       ])
       if (cancelled) return
       setSurvivalTotals(survTotals)
@@ -232,6 +268,8 @@ export function PlayerActivityModal({ playerName, onClose }: Props) {
       setPlayerSessions(computeSessions(obs))
       setSurvivalMates(surMates)
       setTeamMates(tMates)
+      setSurvivalShips(surShips)
+      setTeamShips(tShips)
       setLoading(false)
     }
     void load()
@@ -333,6 +371,7 @@ export function PlayerActivityModal({ playerName, onClose }: Props) {
                 <StatTile icon={<Target className="size-3.5" />} label="Sessions" value={survivalTotals.sessionCount} />
                 <StatTile icon={<Trophy className="size-3.5" />} label="Best score" value={survivalTotals.maxScore.toLocaleString()} />
               </div>
+              <div className="mt-1.5"><ShipChips ships={survivalShips} mode="survival" /></div>
             </div>
           )}
 
@@ -347,6 +386,7 @@ export function PlayerActivityModal({ playerName, onClose }: Props) {
                   <TeamTotalsRow key={t} type={t} totals={teamTotals[t]!} />
                 ))}
               </div>
+              <div className="mt-1.5"><ShipChips ships={teamShips} mode="team" /></div>
             </div>
           )}
 

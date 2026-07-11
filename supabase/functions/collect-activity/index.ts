@@ -29,6 +29,7 @@ interface PxGame {
     player_name?: string
     kills?:  number
     score?:  number
+    ship?:   number
     custom?: { badge?: string; finish?: string; laser?: string; hue?: number }
   }[]
   mode?: { id?: string; root_mode?: string }
@@ -205,6 +206,7 @@ Deno.serve(async (_req) => {
         player_name: name,
         kills:       p.kills ?? 0,
         score:       p.score ?? 0,
+        ship:        p.ship  ?? 0,
       })
 
       if (p.custom && Object.keys(p.custom).length > 0) {

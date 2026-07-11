@@ -20,6 +20,7 @@ export interface Observation {
   playerName: string
   kills: number
   score: number
+  ship: number
 }
 
 // ── Write ─────────────────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ export async function saveObservations(
     player_name: o.playerName,
     kills:       o.kills,
     score:       o.score,
+    ship:        o.ship,
   }))
 
   const { error } = await supabase!
@@ -62,7 +64,7 @@ export async function saveObservations(
 const PAGE = 1000
 const MAX_ROWS = 60_000 // safety cap (~60 requests worst case)
 
-type Row = { id: number; ts: number; server_id: string; server_name: string; region: string; player_name: string; kills: number; score: number }
+type Row = { id: number; ts: number; server_id: string; server_name: string; region: string; player_name: string; kills: number; score: number; ship: number }
 
 /** Retrieve all observations at or after `since` (unix ms). */
 export async function getObservationsSince(since: number): Promise<Observation[]> {
@@ -72,7 +74,7 @@ export async function getObservationsSince(since: number): Promise<Observation[]
   for (let from = 0; from < MAX_ROWS; from += PAGE) {
     const { data, error } = await supabase!
       .from('observations')
-      .select('id, ts, server_id, server_name, region, player_name, kills, score')
+      .select('id, ts, server_id, server_name, region, player_name, kills, score, ship')
       .gte('ts', since)
       .order('ts', { ascending: false })
       .range(from, from + PAGE - 1)
@@ -92,6 +94,7 @@ export async function getObservationsSince(since: number): Promise<Observation[]
     playerName: r.player_name,
     kills:      r.kills,
     score:      r.score,
+    ship:       r.ship,
   }))
 }
 
@@ -265,7 +268,7 @@ export async function getObservationsBefore(cutoff: number): Promise<Observation
   for (let from = 0; from < MAX_ROWS; from += PAGE) {
     const { data, error } = await supabase!
       .from('observations')
-      .select('id, ts, server_id, server_name, region, player_name, kills, score')
+      .select('id, ts, server_id, server_name, region, player_name, kills, score, ship')
       .lt('ts', cutoff)
       .order('ts', { ascending: true })
       .range(from, from + PAGE - 1)
@@ -283,6 +286,7 @@ export async function getObservationsBefore(cutoff: number): Promise<Observation
     playerName: r.player_name,
     kills:      r.kills,
     score:      r.score,
+    ship:       r.ship,
   }))
 }
 
@@ -518,7 +522,7 @@ export async function getPlayerObservationsByName(playerName: string): Promise<O
   for (let from = 0; from < MAX_ROWS; from += PAGE) {
     const { data, error } = await supabase!
       .from('observations')
-      .select('id, ts, server_id, server_name, region, player_name, kills, score')
+      .select('id, ts, server_id, server_name, region, player_name, kills, score, ship')
       .eq('player_name', playerName)
       .order('ts', { ascending: false })
       .range(from, from + PAGE - 1)
@@ -536,6 +540,7 @@ export async function getPlayerObservationsByName(playerName: string): Promise<O
     playerName: r.player_name,
     kills:      r.kills,
     score:      r.score,
+    ship:       r.ship,
   }))
 }
 
@@ -889,4 +894,62 @@ export async function getRecentTeammates(
     .map(([name, encounters]) => ({ playerName: name, encounters }))
     .sort((a, b) => b.encounters - a.encounters)
     .slice(0, 8)
+}
+
+// ── Ship usage ─────────────────────────────────────────────────────────────────
+// Tallied from the same short-retention raw tables as recent teammates, so
+// these reflect recent games only — not lifetime ship usage.
+
+export interface ShipUsage {
+  ship: number
+  count: number
+}
+
+function tallyShips(rows: { ship: number }[]): ShipUsage[] {
+  const counts = new Map<number, number>()
+  for (const r of rows) {
+    if (!r.ship) continue // 0 / spectator — not a real ship choice
+    counts.set(r.ship, (counts.get(r.ship) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([ship, count]) => ({ ship, count }))
+    .sort((a, b) => b.count - a.count)
+}
+
+/** Which ships `playerName` has flown recently, most-used first. */
+export async function getPlayerShipUsage(
+  playerName: string,
+  table: 'observations' | 'team_observations' = 'observations',
+): Promise<ShipUsage[]> {
+  if (!supabaseConfigured || !playerName?.trim()) return []
+  const { data, error } = await supabase!
+    .from(table)
+    .select('ship')
+    .eq('player_name', playerName)
+  if (error || !data) return []
+  return tallyShips(data as { ship: number }[])
+}
+
+/** Most-used ships across everyone recently, most-used first. */
+export async function getMostUsedShips(
+  table: 'observations' | 'team_observations' = 'observations',
+  limit = 10,
+): Promise<ShipUsage[]> {
+  if (!supabaseConfigured) return []
+  // Supabase caps each response at ~1000 rows regardless of .limit(), so page
+  // through the most recent rows (ordered newest-first) for a representative
+  // sample instead of whatever arbitrary 1000 rows an unordered query returns.
+  const all: { ship: number }[] = []
+  for (let from = 0; from < 5000; from += PAGE) {
+    const { data, error } = await supabase!
+      .from(table)
+      .select('ship')
+      .order('ts', { ascending: false })
+      .range(from, from + PAGE - 1)
+    if (error) break
+    const rows = (data ?? []) as { ship: number }[]
+    all.push(...rows)
+    if (rows.length < PAGE) break
+  }
+  return tallyShips(all).slice(0, limit)
 }

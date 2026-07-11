@@ -27,3 +27,26 @@ export function shipGlyph(ship: number, mode: string): string | null {
   const cp = VANILLA[ship]
   return cp ? String.fromCodePoint(cp) : null
 }
+
+// ── Ship names ────────────────────────────────────────────────────────────────
+// Official names, pulled from the game's own ship type definitions. 508 and 608
+// aren't in that source — they fall back to a generic "Tier N" label.
+export const SHIP_NAMES: Record<number, string> = {
+  101: 'Fly',
+  201: 'Delta-Fighter', 202: 'Trident',
+  301: 'Pulse-Fighter', 302: 'Side-Fighter', 303: 'Shadow X-1', 304: 'Y-Defender',
+  401: 'Vanguard', 402: 'Mercury', 403: 'X-Warior', 404: 'Side-Interceptor', 405: 'Pioneer', 406: 'Crusader',
+  501: 'U-Sniper', 502: 'FuryStar', 503: 'T-Warrior', 504: 'Aetos', 505: 'Shadow X-2', 506: 'Howler', 507: 'Bat-Defender',
+  601: 'Advanced-Fighter', 602: 'Scorpion', 603: 'Marauder', 604: 'Condor', 605: 'A-Speedster', 606: 'Rock-Tower', 607: 'O-Defender', 609: 'Speedster Legacy',
+  701: 'Odyssey', 702: 'Shadow X-3', 703: 'Bastion', 704: 'Aries',
+}
+
+/** 1-7, derived from the ship code's leading digit (1xx = tier 1, 7xx = tier 7). */
+export function shipTier(ship: number): number {
+  return Math.floor(ship / 100)
+}
+
+/** Display name for a ship code, falling back to "Tier N" for unmapped codes. */
+export function shipName(ship: number): string {
+  return SHIP_NAMES[ship] ?? `Tier ${shipTier(ship)}`
+}
