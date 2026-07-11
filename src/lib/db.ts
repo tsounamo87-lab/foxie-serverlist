@@ -899,10 +899,28 @@ export async function getRecentTeammates(
 // ── Ship usage ─────────────────────────────────────────────────────────────────
 // Tallied from the same short-retention raw tables as recent teammates, so
 // these reflect recent games only — not lifetime ship usage.
+//
+// Every player starts each life on the tier-1 "Fly", so a raw per-snapshot
+// tally would always be dominated by Fly regardless of what people actually
+// fly. What matters is the ship they ended up on — so for each (player,
+// server) pair we keep only the LAST observed ship (highest ts) and tally
+// those "final ships" instead of every snapshot.
 
 export interface ShipUsage {
   ship: number
   count: number
+}
+
+interface ShipRow { ts: number; ship: number }
+
+function lastShipPerGroup<T extends ShipRow>(rows: T[], keyOf: (r: T) => string): ShipRow[] {
+  const last = new Map<string, ShipRow>()
+  for (const r of rows) {
+    const key = keyOf(r)
+    const cur = last.get(key)
+    if (!cur || r.ts > cur.ts) last.set(key, { ts: r.ts, ship: r.ship })
+  }
+  return [...last.values()]
 }
 
 function tallyShips(rows: { ship: number }[]): ShipUsage[] {
@@ -916,7 +934,7 @@ function tallyShips(rows: { ship: number }[]): ShipUsage[] {
     .sort((a, b) => b.count - a.count)
 }
 
-/** Which ships `playerName` has flown recently, most-used first. */
+/** Which ships `playerName` ended games on recently, most-used first. */
 export async function getPlayerShipUsage(
   playerName: string,
   table: 'observations' | 'team_observations' = 'observations',
@@ -924,13 +942,15 @@ export async function getPlayerShipUsage(
   if (!supabaseConfigured || !playerName?.trim()) return []
   const { data, error } = await supabase!
     .from(table)
-    .select('ship')
+    .select('server_id, ts, ship')
     .eq('player_name', playerName)
   if (error || !data) return []
-  return tallyShips(data as { ship: number }[])
+  const rows = data as { server_id: string; ts: number; ship: number }[]
+  const finalShips = lastShipPerGroup(rows, (r) => r.server_id)
+  return tallyShips(finalShips)
 }
 
-/** Most-used ships across everyone recently, most-used first. */
+/** Ships people ended games on recently across everyone, most-used first. */
 export async function getMostUsedShips(
   table: 'observations' | 'team_observations' = 'observations',
   limit = 10,
@@ -939,17 +959,18 @@ export async function getMostUsedShips(
   // Supabase caps each response at ~1000 rows regardless of .limit(), so page
   // through the most recent rows (ordered newest-first) for a representative
   // sample instead of whatever arbitrary 1000 rows an unordered query returns.
-  const all: { ship: number }[] = []
+  const all: { player_name: string; server_id: string; ts: number; ship: number }[] = []
   for (let from = 0; from < 5000; from += PAGE) {
     const { data, error } = await supabase!
       .from(table)
-      .select('ship')
+      .select('player_name, server_id, ts, ship')
       .order('ts', { ascending: false })
       .range(from, from + PAGE - 1)
     if (error) break
-    const rows = (data ?? []) as { ship: number }[]
+    const rows = (data ?? []) as typeof all
     all.push(...rows)
     if (rows.length < PAGE) break
   }
-  return tallyShips(all).slice(0, limit)
+  const finalShips = lastShipPerGroup(all, (r) => `${r.player_name}\x00${r.server_id}`)
+  return tallyShips(finalShips).slice(0, limit)
 }

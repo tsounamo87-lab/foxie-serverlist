@@ -200,7 +200,7 @@ function ShipChips({ ships, mode }: { ships: ShipUsage[]; mode: string }) {
         return (
           <span
             key={u.ship}
-            title={`${shipName(u.ship)} · ${pct}% of recent sightings`}
+            title={`${shipName(u.ship)} · ended ${pct}% of recent games on this ship`}
             className="flex items-center gap-1 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-text"
           >
             {glyph && (
