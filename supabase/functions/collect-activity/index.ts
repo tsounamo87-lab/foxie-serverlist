@@ -145,9 +145,14 @@ function startOfMonth(ts: number): number {
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 Deno.serve(async (_req) => {
+  // Service role key (auto-provided by Supabase to every edge function) —
+  // bypasses RLS. Needed to read notification_subscriptions.webhook_url,
+  // which anon/public reads are deliberately blocked from (see RLS policy):
+  // a webhook URL is a bearer secret, reading someone else's lets you spam
+  // their Discord channel.
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_ANON_KEY')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
   const bucketTs = Math.round(Date.now() / WRITE_BUCKET_MS) * WRITE_BUCKET_MS
 
