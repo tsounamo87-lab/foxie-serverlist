@@ -65,7 +65,7 @@ function sorted(players: PlayerAggregate[], key: SortKey, asc: boolean): PlayerA
 // ── Table header cell ─────────────────────────────────────────────────────────
 
 // Shared column template — must match PlayerRow's grid exactly.
-const COL_GRID = 'grid-cols-[2rem_1fr_3.5rem_4rem_3rem_5.5rem]'
+const COL_GRID = 'grid-cols-[2rem_1fr_3.5rem_4.5rem_4rem_3rem_5.5rem]'
 
 function TH({
   label,
@@ -156,6 +156,11 @@ const PlayerRow = memo(function PlayerRow({
       {/* Kills */}
       <span className="text-right tabular-nums font-semibold text-accent">
         {player.totalKills > 0 ? player.totalKills : <span className="text-muted font-normal">—</span>}
+      </span>
+
+      {/* Best score */}
+      <span className="text-right tabular-nums text-text/90 text-xs">
+        {player.maxScore > 0 ? player.maxScore.toLocaleString() : <span className="text-muted">—</span>}
       </span>
 
       {/* Time */}
@@ -444,6 +449,7 @@ export function SurvivalActivity({ onClose }: Props) {
                   <span className="text-center text-[10px] uppercase tracking-wide text-muted">#</span>
                   <TH label="Player"    col="kills"    active={sortKey === 'kills'}    asc={sortAsc} align="left"  onClick={toggleSort} />
                   <TH label="Kills"     col="kills"    active={sortKey === 'kills'}    asc={sortAsc} onClick={toggleSort} />
+                  <TH label="Best score" col="score"   active={sortKey === 'score'}    asc={sortAsc} onClick={toggleSort} />
                   <TH label="Time"      col="time"     active={sortKey === 'time'}     asc={sortAsc} onClick={toggleSort} />
                   <TH label="Sessions"  col="sessions" active={sortKey === 'sessions'} asc={sortAsc} onClick={toggleSort} />
                   <TH label="Last seen" col="lastSeen" active={sortKey === 'lastSeen'} asc={sortAsc} onClick={toggleSort} />
