@@ -11,7 +11,11 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const SIMSTATUS_URL   = 'https://starblast.dankdmitron.dev/api/simstatus.json'
 const PM_GAMES_URL    = 'https://api.pixelmelt.dev/games'
-const WRITE_BUCKET_MS = 5 * 60 * 1000
+// Matches the cron schedule (every 1 min). Must not be wider than that, or
+// intermediate polls within a window get silently dropped by the upsert's
+// ignoreDuplicates — losing whatever score/kills progression happened between
+// the first poll of the window and the next one.
+const WRITE_BUCKET_MS = 60 * 1000
 
 // ── Minimal types ──────────────────────────────────────────────────────────────
 
