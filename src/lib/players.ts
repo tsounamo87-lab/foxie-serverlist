@@ -131,11 +131,6 @@ export async function fetchPlayerData(signal?: AbortSignal): Promise<PlayerData>
   return { byKey, seedByKey, fetchedAt: Date.now() }
 }
 
-/** Image URL for an ECP badge code (e.g. "csf" -> .../ecp/csf.png). */
-export function badgeUrl(badge: string): string {
-  return `https://starblast.io/ecp/${badge}.png`
-}
-
 /** A server entry plus (optionally) its live player roster and map seed. */
 export type EnrichedGame = GameEntry & {
   livePlayers?: Player[]

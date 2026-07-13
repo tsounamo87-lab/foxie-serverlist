@@ -11,18 +11,6 @@
 
 import { supabase, supabaseConfigured } from './supabase'
 
-export interface Observation {
-  id?: number
-  ts: number
-  serverId: string
-  serverName: string
-  region: string
-  playerName: string
-  kills: number
-  score: number
-  ship: number
-}
-
 // ── Read ──────────────────────────────────────────────────────────────────────
 
 // Supabase caps every response at `max-rows` (default 1000) regardless of the
@@ -65,12 +53,6 @@ export async function getLastRosterForServer(
     kills: r.kills,
     score: r.score,
   }))
-}
-
-/** Dev helper — wipe everything. */
-export async function clearAll(): Promise<void> {
-  if (!supabaseConfigured) return
-  await supabase!.from('observations').delete().gt('ts', 0)
 }
 
 // ── Server-side player activity aggregation ───────────────────────────────────
@@ -356,18 +338,6 @@ export async function getPlayerBadgeHistory(playerName: string): Promise<BadgeHi
 
 // ── Team observations ─────────────────────────────────────────────────────────
 
-export interface TeamObservation {
-  id?: number
-  ts: number
-  serverId: string
-  serverName: string
-  region: string
-  playerName: string
-  score: number
-  ship: number
-  team: number
-}
-
 export interface TeamPlayerRow {
   playerName: string
   totalDurationMs: number
@@ -485,16 +455,6 @@ export async function deleteNotificationSubscription(id: string): Promise<void> 
   if (!supabaseConfigured) return
   const { error } = await supabase!.from('notification_subscriptions').delete().eq('id', id)
   if (error) console.warn('[db] subscription delete error:', error.message)
-}
-
-/** Enable or disable a background subscription. */
-export async function toggleNotificationSubscription(id: string, enabled: boolean): Promise<void> {
-  if (!supabaseConfigured) return
-  const { error } = await supabase!
-    .from('notification_subscriptions')
-    .update({ enabled })
-    .eq('id', id)
-  if (error) console.warn('[db] subscription toggle error:', error.message)
 }
 
 // ── Single-player profile lookups ──────────────────────────────────────────────

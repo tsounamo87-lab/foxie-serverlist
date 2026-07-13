@@ -56,21 +56,6 @@ export function activeGearFilterCount(f: GearFilter): number {
   return [f.badge, f.finish, f.laser, f.hue].filter((v) => v !== 'any').length
 }
 
-/**
- * True when two players have the exact same ECP composition — badge, finish,
- * laser AND the precise hue value (not just the same colour bucket).
- */
-export function matchesExactGear(a: PlayerCustom | null | undefined, b: PlayerCustom | null | undefined): boolean {
-  if (!a || !b) return false
-  const badgeA = a.badge && a.badge !== 'blank' ? a.badge : null
-  const badgeB = b.badge && b.badge !== 'blank' ? b.badge : null
-  if (badgeA !== badgeB) return false
-  if ((a.finish ?? '') !== (b.finish ?? '')) return false
-  if (String(a.laser ?? '0') !== String(b.laser ?? '0')) return false
-  if ((a.hue ?? 0) !== (b.hue ?? 0)) return false
-  return true
-}
-
 /** True when `custom` satisfies every non-'any' constraint in `f`. */
 export function matchesGearFilter(custom: PlayerCustom | null | undefined, f: GearFilter): boolean {
   if (!isGearFilterActive(f)) return true

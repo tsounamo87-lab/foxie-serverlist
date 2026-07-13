@@ -37,8 +37,3 @@ export function PlayerAvatar({ player, size = 'md' }: AvatarProps) {
     />
   )
 }
-
-/** Tailwind classes to apply to an ECP player's row/chip */
-export function ecpRowClass(player: Player): string {
-  return player.custom ? 'ring-1 ring-accent/20' : ''
-}
