@@ -13,13 +13,12 @@ import type { CheatLevel } from '../lib/ecpDetect'
 import type { PlayerCustom } from '../lib/players'
 import {
   type Session,
-  computeSessions,
   fmtDuration,
   fmtRelative,
   killsPerDay,
 } from '../lib/survivalTracker'
 import {
-  getPlayerObservationsByName,
+  getPlayerSessionsLongTerm,
   getPlayerBadgeHistory,
   getPlayerSurvivalTotals,
   getPlayerTeamTotals,
@@ -247,14 +246,14 @@ export function PlayerActivityModal({ playerName, onClose }: Props) {
     let cancelled = false
     async function load() {
       setLoading(true)
-      const [survTotals, classic, gotn, aow, ecpRow, hist, obs, surMates, tMates, surShips, tShips] = await Promise.all([
+      const [survTotals, classic, gotn, aow, ecpRow, hist, sessions, surMates, tMates, surShips, tShips] = await Promise.all([
         getPlayerSurvivalTotals(viewName),
         getPlayerTeamTotals(viewName, 'classic'),
         getPlayerTeamTotals(viewName, 'gotn'),
         getPlayerTeamTotals(viewName, 'aow'),
         getPlayerEcp(viewName),
         getPlayerBadgeHistory(viewName),
-        getPlayerObservationsByName(viewName),
+        getPlayerSessionsLongTerm(viewName),
         getRecentTeammates(viewName, 'observations'),
         getRecentTeammates(viewName, 'team_observations'),
         getPlayerShipUsage(viewName, 'observations'),
@@ -265,7 +264,7 @@ export function PlayerActivityModal({ playerName, onClose }: Props) {
       setTeamTotals({ classic: classic ?? undefined, gotn: gotn ?? undefined, aow: aow ?? undefined })
       setEcp(ecpRow)
       setBadgeHistory(hist)
-      setPlayerSessions(computeSessions(obs))
+      setPlayerSessions(sessions)
       setSurvivalMates(surMates)
       setTeamMates(tMates)
       setSurvivalShips(surShips)
@@ -542,7 +541,7 @@ export function PlayerActivityModal({ playerName, onClose }: Props) {
             </div>
           )}
 
-          {/* Recent sessions (survival — raw retention is a short rolling window) */}
+          {/* Recent sessions (survival) — from survival_buckets_cache, full history */}
           {playerSessions.length > 0 && (
             <div className="rounded-lg border border-border">
               <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 border-b border-border px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted">

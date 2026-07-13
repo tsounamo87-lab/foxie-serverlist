@@ -26,63 +26,8 @@ export interface Observation {
 // ── Read ──────────────────────────────────────────────────────────────────────
 
 // Supabase caps every response at `max-rows` (default 1000) regardless of the
-// `.limit()` we pass. To get the full window we must paginate with `.range()`.
-// We page NEWEST-first so that if we ever hit MAX_ROWS we keep the most recent
-// data rather than freezing on the oldest page (the previous ascending+limit
-// approach returned only the first 1000 rows, so the view stopped updating once
-// the table grew past ~1 hour of data).
+// `.limit()` we pass. To get a full page range we must paginate with `.range()`.
 const PAGE = 1000
-const MAX_ROWS = 60_000 // safety cap (~60 requests worst case)
-
-type Row = { id: number; ts: number; server_id: string; server_name: string; region: string; player_name: string; kills: number; score: number; ship: number }
-
-/** Retrieve all observations at or after `since` (unix ms). */
-export async function getObservationsSince(since: number): Promise<Observation[]> {
-  if (!supabaseConfigured) return []
-
-  const all: Row[] = []
-  for (let from = 0; from < MAX_ROWS; from += PAGE) {
-    const { data, error } = await supabase!
-      .from('observations')
-      .select('id, ts, server_id, server_name, region, player_name, kills, score, ship')
-      .gte('ts', since)
-      .order('ts', { ascending: false })
-      .range(from, from + PAGE - 1)
-
-    if (error) { console.warn('[db] select error', error.message); break }
-    const rows = (data ?? []) as Row[]
-    all.push(...rows)
-    if (rows.length < PAGE) break // last page reached
-  }
-
-  return all.map((r) => ({
-    id:         r.id,
-    ts:         r.ts,
-    serverId:   r.server_id,
-    serverName: r.server_name,
-    region:     r.region,
-    playerName: r.player_name,
-    kills:      r.kills,
-    score:      r.score,
-    ship:       r.ship,
-  }))
-}
-
-// ── Prune ─────────────────────────────────────────────────────────────────────
-
-/**
- * Delete observations older than `keepMs`.
- * Requires a Supabase DELETE RLS policy — see SQL setup.
- */
-export async function pruneOldObservations(keepMs: number): Promise<void> {
-  if (!supabaseConfigured) return
-  const cutoff = Date.now() - keepMs
-  const { error } = await supabase!
-    .from('observations')
-    .delete()
-    .lt('ts', cutoff)
-  if (error) console.warn('[db] prune error', error.message)
-}
 
 /**
  * Get the last known player roster for a specific server.
@@ -129,10 +74,10 @@ export async function clearAll(): Promise<void> {
 }
 
 // ── Server-side player activity aggregation ───────────────────────────────────
-// Uses the get_player_activity(p_since) RPC (PostgreSQL function) to compute
-// sessions and player stats entirely in the DB. Replaces fetching 80k+ raw
-// rows to the browser, which was capped at MAX_ROWS and caused players to
-// "disappear" once the table grew past 60k rows.
+// Uses the get_player_stats_fast(p_since) RPC (PostgreSQL function) to compute
+// player stats entirely in the DB, reading from survival_buckets_cache. Avoids
+// fetching raw rows to the browser, which used to be capped client-side and
+// caused players to "disappear" once the table grew large enough.
 
 export interface PlayerActivityRow {
   playerName:      string
@@ -320,32 +265,43 @@ export async function getPlayersWithExactGear(custom: PlayerCustom, excludeName?
   return (data as { player_name: string }[]).map((r) => r.player_name).sort()
 }
 
-/** Fetch all observations for a specific player (no time limit). */
-export async function getPlayerObservationsByName(playerName: string): Promise<Observation[]> {
-  if (!supabaseConfigured) return []
-  const all: Row[] = []
-  for (let from = 0; from < MAX_ROWS; from += PAGE) {
-    const { data, error } = await supabase!
-      .from('observations')
-      .select('id, ts, server_id, server_name, region, player_name, kills, score, ship')
-      .eq('player_name', playerName)
-      .order('ts', { ascending: false })
-      .range(from, from + PAGE - 1)
-    if (error) { console.warn('[db] player obs error', error.message); break }
-    const rows = (data ?? []) as Row[]
-    all.push(...rows)
-    if (rows.length < PAGE) break
-  }
-  return all.map((r) => ({
-    id:         r.id,
-    ts:         r.ts,
-    serverId:   r.server_id,
-    serverName: r.server_name,
+export interface PlayerSession {
+  playerName: string
+  serverId: string
+  serverName: string
+  region: string
+  startTs: number
+  endTs: number
+  durationMs: number
+  killsGained: number
+  maxScore: number
+}
+
+/**
+ * Recent survival "sessions" for a player, most recent first — one entry per
+ * 30-min bucket from survival_buckets_cache (full history, unlike the 6h raw
+ * table). No per-server breakdown at this granularity, only region.
+ */
+export async function getPlayerSessionsLongTerm(playerName: string, limit = 50): Promise<PlayerSession[]> {
+  if (!supabaseConfigured || !playerName?.trim()) return []
+  const { data, error } = await supabase!
+    .from('survival_buckets_cache')
+    .select('region, min_ts, max_ts, bucket_dur_ms, max_score, max_kills')
+    .eq('player_name', playerName)
+    .order('bucket_ts', { ascending: false })
+    .limit(limit)
+  if (error || !data) return []
+  type BucketRow = { region: string; min_ts: number; max_ts: number; bucket_dur_ms: number; max_score: number; max_kills: number }
+  return (data as BucketRow[]).map((r) => ({
+    playerName,
+    serverId:   '',
+    serverName: r.region,
     region:     r.region,
-    playerName: r.player_name,
-    kills:      r.kills,
-    score:      r.score,
-    ship:       r.ship,
+    startTs:    r.min_ts,
+    endTs:      r.max_ts,
+    durationMs: r.bucket_dur_ms,
+    killsGained: r.max_kills,
+    maxScore:   r.max_score,
   }))
 }
 
