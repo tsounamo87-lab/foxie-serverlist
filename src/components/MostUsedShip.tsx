@@ -1,6 +1,6 @@
 // ─── Most used ship stat ──────────────────────────────────────────────────────
 // Small inline stat showing the top ship(s) currently in use, tallied from the
-// short-retention raw observation tables (recent games only, not lifetime).
+// long-term bucket-cache tables (full history, weighted toward recent buckets).
 
 import { useEffect, useState } from 'react'
 import { Rocket } from 'lucide-react'
@@ -22,7 +22,7 @@ export function MostUsedShip({ table, mode }: { table: 'observations' | 'team_ob
 
   return (
     <span
-      title={`${shipName(top.ship)} — most-used ship in recent games`}
+      title={`${shipName(top.ship)} — most-used ship`}
       className="flex items-center gap-1 text-xs text-muted shrink-0"
     >
       <Rocket className="size-3.5" />

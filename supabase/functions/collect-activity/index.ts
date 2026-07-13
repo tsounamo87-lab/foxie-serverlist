@@ -1,7 +1,9 @@
 // ── Foxie — server-side activity collector ────────────────────────────────────
-// Scheduled every 5 minutes via Supabase cron.
-// Polls Pixelmelt + simstatus, writes survival observations + ECP badges.
-// Runs the monthly rollup (archive + prune) once per hour.
+// Scheduled every minute via Supabase cron.
+// Polls Pixelmelt + simstatus, writes survival + team observations, ECP badges,
+// and badge history. This is the SOLE writer for all of this — the browser no
+// longer writes anything, so data collection doesn't depend on anyone having
+// the site open.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
@@ -10,10 +12,6 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 const SIMSTATUS_URL   = 'https://starblast.dankdmitron.dev/api/simstatus.json'
 const PM_GAMES_URL    = 'https://api.pixelmelt.dev/games'
 const WRITE_BUCKET_MS = 5 * 60 * 1000
-const SESSION_GAP_MS  = 12 * 60 * 1000
-const KEEP_MS         = 35 * 24 * 3600 * 1000
-const PAGE            = 1000
-const MAX_FETCH       = 60_000
 
 // ── Minimal types ──────────────────────────────────────────────────────────────
 
@@ -27,119 +25,13 @@ interface PxGame {
   compositeId?: string
   players?: {
     player_name?: string
-    kills?:  number
-    score?:  number
-    ship?:   number
+    kills?:    number
+    score?:    number
+    ship?:     number
+    friendly?: number
     custom?: { badge?: string; finish?: string; laser?: string; hue?: number }
   }[]
   mode?: { id?: string; root_mode?: string }
-}
-
-interface Obs {
-  id?:        number
-  ts:         number
-  serverId:   string
-  serverName: string
-  region:     string
-  playerName: string
-  kills:      number
-  score:      number
-}
-
-// ── Session computation (mirrors survivalTracker.ts) ──────────────────────────
-
-interface Session {
-  playerName: string
-  serverId:   string
-  serverName: string
-  region:     string
-  startTs:    number
-  endTs:      number
-  durationMs: number
-  killsGained: number
-  maxScore:   number
-}
-
-function computeSessions(observations: Obs[]): Session[] {
-  const groups = new Map<string, Obs[]>()
-  for (const o of observations) {
-    const k = `${o.playerName}\x00${o.serverId}`
-    const arr = groups.get(k)
-    if (arr) arr.push(o)
-    else groups.set(k, [o])
-  }
-
-  const sessions: Session[] = []
-
-  for (const [, list] of groups) {
-    list.sort((a, b) => a.ts - b.ts)
-    let start = list[0], prev = list[0]
-    let minK = start.kills, maxK = start.kills, maxS = start.score
-
-    const flush = (last: Obs) => sessions.push({
-      playerName:  start.playerName,
-      serverId:    start.serverId,
-      serverName:  start.serverName,
-      region:      start.region,
-      startTs:     start.ts,
-      endTs:       last.ts  + Math.min(SESSION_GAP_MS / 2, 120_000),
-      durationMs:  last.ts  - start.ts + Math.min(SESSION_GAP_MS / 2, 120_000),
-      killsGained: Math.max(0, maxK - minK),
-      maxScore:    maxS,
-    })
-
-    for (let i = 1; i < list.length; i++) {
-      const cur = list[i]
-      if (cur.ts - prev.ts > SESSION_GAP_MS) {
-        flush(prev)
-        start = cur; minK = cur.kills; maxK = cur.kills; maxS = cur.score
-      } else {
-        minK = Math.min(minK, cur.kills)
-        maxK = Math.max(maxK, cur.kills)
-        maxS = Math.max(maxS, cur.score)
-      }
-      prev = cur
-    }
-    flush(prev)
-  }
-  return sessions
-}
-
-interface MonthlyStats {
-  playerName:   string
-  yearMonth:    string
-  kills:        number
-  durationMs:   number
-  sessionCount: number
-  maxScore:     number
-  lastSeenTs:   number
-  regions:      string[]
-}
-
-function buildMonthlyStatsMap(sessions: Session[]): Map<string, MonthlyStats> {
-  const map = new Map<string, MonthlyStats>()
-  for (const s of sessions) {
-    const yearMonth = new Date(s.startTs).toISOString().slice(0, 7)
-    const key = `${s.playerName}\x00${yearMonth}`
-    let st = map.get(key)
-    if (!st) {
-      st = { playerName: s.playerName, yearMonth, kills: 0, durationMs: 0,
-             sessionCount: 0, maxScore: 0, lastSeenTs: 0, regions: [] }
-      map.set(key, st)
-    }
-    st.kills        += s.killsGained
-    st.durationMs   += s.durationMs
-    st.sessionCount++
-    st.maxScore      = Math.max(st.maxScore, s.maxScore)
-    st.lastSeenTs    = Math.max(st.lastSeenTs, s.endTs)
-    if (!st.regions.includes(s.region)) st.regions.push(s.region)
-  }
-  return map
-}
-
-function startOfMonth(ts: number): number {
-  const d = new Date(ts)
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -184,35 +76,57 @@ Deno.serve(async (_req) => {
   }
 
   // ── 3. Build rows ─────────────────────────────────────────────────────────
-  const obsRows:  object[] = []
-  const ecpRows:  object[] = []
+  const obsRows:   object[] = []
+  const teamRows:  object[] = []
+  const ecpRows:   object[] = []
+  const badgeRows: object[] = []
 
-  let totalGames = 0, survivalGames = 0
+  let totalGames = 0, survivalGames = 0, teamGames = 0
   for (const g of pxGames) {
     if (!g.compositeId || !Array.isArray(g.players)) continue
     totalGames++
 
-    // Use simstatus as the authoritative source for survival mode.
-    // This avoids relying on Pixelmelt's mode.id which may be null/missing.
-    if (!survivalKeys.has(g.compositeId)) continue
-    survivalGames++
-
     const m = meta.get(g.compositeId)
+
+    // Use simstatus as the authoritative source for mode — avoids relying on
+    // Pixelmelt's mode.id which may be null/missing. AOW games run under the
+    // 'team' mode too but are identified by name (mirrors teamTracker.ts).
+    // ECP/badge history are captured for every mode (not just survival/team) —
+    // the loop below is never skipped, only the observation writes are gated.
+    const isSurvival = survivalKeys.has(g.compositeId)
+    const isTeam     = m?.mode === 'team' || /aow/i.test(m?.name ?? '')
+    if (isSurvival) survivalGames++
+    if (isTeam) teamGames++
 
     for (const p of g.players) {
       const name = (p.player_name ?? '').trim()
       if (!name) continue
 
-      obsRows.push({
-        ts:          bucketTs,
-        server_id:   g.compositeId,
-        server_name: m?.name     ?? g.compositeId,
-        region:      m?.location ?? 'Unknown',
-        player_name: name,
-        kills:       p.kills ?? 0,
-        score:       p.score ?? 0,
-        ship:        p.ship  ?? 0,
-      })
+      if (isSurvival) {
+        obsRows.push({
+          ts:          bucketTs,
+          server_id:   g.compositeId,
+          server_name: m?.name     ?? g.compositeId,
+          region:      m?.location ?? 'Unknown',
+          player_name: name,
+          kills:       p.kills ?? 0,
+          score:       p.score ?? 0,
+          ship:        p.ship  ?? 0,
+        })
+      }
+
+      if (isTeam) {
+        teamRows.push({
+          ts:          bucketTs,
+          server_id:   g.compositeId,
+          server_name: m?.name     ?? g.compositeId,
+          region:      m?.location ?? 'Unknown',
+          player_name: name,
+          score:       p.score    ?? 0,
+          ship:        p.ship     ?? 0,
+          team:        p.friendly ?? 0,
+        })
+      }
 
       if (p.custom && Object.keys(p.custom).length > 0) {
         ecpRows.push({
@@ -222,6 +136,16 @@ Deno.serve(async (_req) => {
           laser:       p.custom.laser  ?? null,
           hue:         p.custom.hue    ?? 0,
           updated_at:  Date.now(),
+        })
+        const badgeKey = `${p.custom.badge ?? ''}|${p.custom.finish ?? ''}|${p.custom.laser ?? ''}|${p.custom.hue ?? 0}`
+        badgeRows.push({
+          player_name: name,
+          badge_key:   badgeKey,
+          badge:       p.custom.badge  ?? '',
+          finish:      p.custom.finish ?? '',
+          laser:       p.custom.laser  ?? '',
+          hue:         p.custom.hue    ?? 0,
+          ts:          bucketTs,
         })
       }
     }
@@ -235,7 +159,15 @@ Deno.serve(async (_req) => {
     if (error) console.error('[collector] obs upsert error', error.message)
   }
 
-  // ── 5. Update ECP badges (deduplicate by player_name first) ──────────────
+  // ── 5. Write team observations ────────────────────────────────────────────
+  if (teamRows.length > 0) {
+    const { error } = await supabase
+      .from('team_observations')
+      .upsert(teamRows as never[], { onConflict: 'ts,server_id,player_name', ignoreDuplicates: true })
+    if (error) console.error('[collector] team obs upsert error', error.message)
+  }
+
+  // ── 6. Update ECP badges (deduplicate by player_name first) ──────────────
   if (ecpRows.length > 0) {
     // A player may appear in multiple servers — keep only one row per name
     const ecpDeduped = new Map<string, object>()
@@ -247,65 +179,18 @@ Deno.serve(async (_req) => {
     if (error) console.error('[collector] ecp upsert error', error.message)
   }
 
-  // ── 6. Hourly rollup (archive expired months → player_monthly_stats) ──────
-  let rolledUp = 0
-  if (new Date().getUTCMinutes() === 0) {
-    try {
-      const cutoff = startOfMonth(Date.now() - KEEP_MS)
-      if (cutoff > 0) {
-        // Fetch expired observations (oldest first)
-        const expired: Obs[] = []
-        for (let from = 0; from < MAX_FETCH; from += PAGE) {
-          const { data, error } = await supabase
-            .from('observations')
-            .select('id, ts, server_id, server_name, region, player_name, kills, score')
-            .lt('ts', cutoff)
-            .order('ts', { ascending: true })
-            .range(from, from + PAGE - 1)
-          if (error) break
-          type R = { id: number; ts: number; server_id: string; server_name: string; region: string; player_name: string; kills: number; score: number }
-          const rows = (data ?? []) as R[]
-          expired.push(...rows.map(r => ({
-            id: r.id, ts: r.ts, serverId: r.server_id, serverName: r.server_name,
-            region: r.region, playerName: r.player_name, kills: r.kills, score: r.score,
-          })))
-          if (rows.length < PAGE) break
-        }
-
-        if (expired.length > 0) {
-          const sessions  = computeSessions(expired)
-          const statsMap  = buildMonthlyStatsMap(sessions)
-          const statsRows = [...statsMap.values()].map(s => ({
-            player_name:   s.playerName,
-            year_month:    s.yearMonth,
-            kills:         s.kills,
-            duration_ms:   s.durationMs,
-            session_count: s.sessionCount,
-            max_score:     s.maxScore,
-            last_seen_ts:  s.lastSeenTs,
-            regions:       s.regions,
-          }))
-
-          const { error: archiveErr } = await supabase
-            .from('player_monthly_stats')
-            .upsert(statsRows, { onConflict: 'player_name,year_month' })
-
-          // Only prune AFTER successful archive
-          if (!archiveErr) {
-            const deleteUpTo = expired.length < MAX_FETCH
-              ? cutoff
-              : expired[expired.length - 1].ts + 1
-            await supabase.from('observations').delete().lt('ts', deleteUpTo)
-            rolledUp = expired.length
-          }
-        }
-      }
-    } catch (e) {
-      console.error('[collector] rollup error', e)
+  // ── 7. Update badge history (deduplicate by player_name+badge_key first) ──
+  if (badgeRows.length > 0) {
+    const badgeDeduped = new Map<string, object>()
+    for (const row of badgeRows) {
+      const r = row as { player_name: string; badge_key: string }
+      badgeDeduped.set(`${r.player_name}|${r.badge_key}`, row)
     }
+    const { error } = await supabase.rpc('upsert_badge_history_batch', { p_rows: [...badgeDeduped.values()] })
+    if (error) console.error('[collector] badge history batch error', error.message)
   }
 
-  // ── 7. Background notification subscriptions ─────────────────────────────
+  // ── 8. Background notification subscriptions ─────────────────────────────
   // Read enabled subscriptions and fire Discord webhooks for matching events.
   // Each subscription has a cooldown to prevent repeated fires.
   let notifSent = 0
@@ -481,10 +366,10 @@ Deno.serve(async (_req) => {
     console.error('[collector] notification check error', e)
   }
 
-  console.warn(`[collector] pixelmelt=${totalGames} games, survival=${survivalGames}, obs=${obsRows.length}, ecp=${ecpRows.length}, rolledUp=${rolledUp}, notifSent=${notifSent}`)
+  console.warn(`[collector] pixelmelt=${totalGames} games, survival=${survivalGames}, team=${teamGames}, obs=${obsRows.length}, teamObs=${teamRows.length}, ecp=${ecpRows.length}, badges=${badgeRows.length}, notifSent=${notifSent}`)
 
   return new Response(
-    JSON.stringify({ ok: true, observations: obsRows.length, ecp: ecpRows.length, rolledUp, notifSent }),
+    JSON.stringify({ ok: true, observations: obsRows.length, teamObservations: teamRows.length, ecp: ecpRows.length, badges: badgeRows.length, notifSent }),
     { headers: { 'Content-Type': 'application/json' } },
   )
 })

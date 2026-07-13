@@ -1,16 +1,14 @@
 // ─── Team mode activity tracker ───────────────────────────────────────────────
+// Stat queries for team mode. Data collection itself happens server-side
+// (supabase/functions/collect-activity), not in the browser.
 
-import type { EnrichedGame } from './players'
 import {
-  saveTeamObservations,
   getTeamPlayerStatsRpc,
   countTeamObservationsSince,
 } from './db'
 import { fmtDuration, fmtRelative } from './survivalTracker'
 
 export { fmtDuration, fmtRelative }
-
-const WRITE_BUCKET_MS = 60 * 1000  // 1 minute
 
 export interface TeamPlayerAggregate {
   playerName: string
@@ -19,35 +17,6 @@ export interface TeamPlayerAggregate {
   maxScore: number
   lastSeen: number
   regions: string[]
-}
-
-export async function recordTeamSnapshot(games: EnrichedGame[], ts: number): Promise<void> {
-  const bucketTs = Math.round(ts / WRITE_BUCKET_MS) * WRITE_BUCKET_MS
-  const obs: Omit<import('./db').TeamObservation, 'id'>[] = []
-
-  for (const game of games) {
-    const isAow = /aow/i.test(game.name ?? '')
-    if (game.mode !== 'team' && !isAow) continue
-    if (!game.livePlayers?.length) continue
-
-    for (const p of game.livePlayers) {
-      if (!p.player_name?.trim()) continue
-      obs.push({
-        ts:         bucketTs,
-        serverId:   game.key,
-        serverName: game.name || `System ${game.id}`,
-        region:     game.location,
-        playerName: p.player_name.trim(),
-        score:      p.score ?? 0,
-        ship:       p.ship ?? 0,
-        team:       p.friendly ?? 0,
-      })
-    }
-  }
-
-  if (obs.length > 0) {
-    await saveTeamObservations(obs).catch(() => {})
-  }
 }
 
 export async function queryTeamActivity(since: number, type: import('./db').TeamType = 'classic'): Promise<{

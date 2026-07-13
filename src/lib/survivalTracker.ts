@@ -1,41 +1,20 @@
 // ─── Survival activity tracker ────────────────────────────────────────────────
-// Collects player observations on every poll, derives sessions + stats.
+// Session/stat derivation for survival mode. Data collection itself happens
+// server-side (supabase/functions/collect-activity), not in the browser.
 
-import type { EnrichedGame } from './players'
 import {
-  saveObservations,
   getObservationsSince,
-  getObservationsBefore,
-  pruneObservationsBefore,
   getPlayerActivityRpc,
   countObservationsSince,
-  upsertPlayerEcpBatch,
-  upsertPlayerBadgeHistoryBatch,
-  upsertPlayerMonthlyStatsBatch,
-  getAllPlayerMonthlyStats,
   type Observation,
-  type PlayerMonthlyStats,
 } from './db'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /**
- * Write bucket — ts is rounded to this interval before writing.
- * Multiple visitors watching the same server get deduplicated to one row.
- * Must be smaller than SESSION_GAP_MS.
- */
-const WRITE_BUCKET_MS = 60 * 1000  // 1 minute
-
-/**
  * If no observation for a player in a server for this long, the session ended.
- * Must be > WRITE_BUCKET_MS so consecutive buckets stay in the same session.
  */
 const SESSION_GAP_MS = 12 * 60 * 1000  // 12 minutes
-
-/** Keep observations for this long before pruning. */
-const KEEP_MS = 35 * 24 * 3600 * 1000  // 35 days
-
-let _lastPruneTs = 0
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -59,56 +38,6 @@ export interface PlayerAggregate {
   maxScore: number
   lastSeen: number
   regions: string[]
-}
-
-// ── Data collection ───────────────────────────────────────────────────────────
-
-/**
- * Call this after every poll. Records one observation per player seen in any
- * survival server that has live player data.
- */
-export async function recordSnapshot(games: EnrichedGame[], ts: number): Promise<void> {
-  // Round ts to the write bucket so concurrent visitors produce the same key
-  // and the Supabase upsert deduplicates them into a single row.
-  const bucketTs = Math.round(ts / WRITE_BUCKET_MS) * WRITE_BUCKET_MS
-
-  const obs: Omit<Observation, 'id'>[] = []
-  const ecpEntries: { playerName: string; custom: import('./players').PlayerCustom }[] = []
-
-  for (const game of games) {
-    if (game.mode !== 'survival') continue
-    if (!game.livePlayers?.length) continue
-
-    for (const p of game.livePlayers) {
-      if (!p.player_name?.trim()) continue
-      if (p.custom) ecpEntries.push({ playerName: p.player_name.trim(), custom: p.custom })
-      obs.push({
-        ts: bucketTs,
-        serverId: game.key,
-        serverName: game.name || `System ${game.id}`,
-        region: game.location,
-        playerName: p.player_name.trim(),
-        kills: p.kills ?? 0,
-        score: p.score ?? 0,
-        ship: p.ship ?? 0,
-      })
-    }
-  }
-
-  if (obs.length > 0) {
-    await saveObservations(obs).catch(() => {/* ignore — non-critical */})
-  }
-
-  if (ecpEntries.length > 0) {
-    void upsertPlayerEcpBatch(ecpEntries)
-    void upsertPlayerBadgeHistoryBatch(ecpEntries, bucketTs)
-  }
-
-  // Roll up expired months + prune, at most once per hour
-  if (ts - _lastPruneTs > 3600_000) {
-    _lastPruneTs = ts
-    rollupAndPrune().catch(() => {})
-  }
 }
 
 // ── Session computation ───────────────────────────────────────────────────────
@@ -203,98 +132,11 @@ export function aggregatePlayers(sessions: Session[]): PlayerAggregate[] {
   return [...map.values()].sort((a, b) => b.totalKills - a.totalKills)
 }
 
-// ── Monthly rollup helpers ────────────────────────────────────────────────────
-
-/** Round a timestamp down to UTC month start. */
-function startOfMonth(ts: number): number {
-  const d = new Date(ts)
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)
-}
-
-/**
- * Returns the month-boundary timestamp that is at or before (now - KEEP_MS).
- * Only observations before this cutoff are in fully-expired months and safe
- * to roll up without risking partial-month data.
- */
-function getRollupCutoff(): number {
-  return startOfMonth(Date.now() - KEEP_MS)
-}
-
-/**
- * Aggregate session list into the PlayerMonthlyStats shape, keyed by player+month.
- * Used internally by the rollup job.
- */
-function buildMonthlyStatsMap(sessions: Session[]): Map<string, PlayerMonthlyStats> {
-  const map = new Map<string, PlayerMonthlyStats>()
-  for (const s of sessions) {
-    const yearMonth = new Date(s.startTs).toISOString().slice(0, 7) // 'YYYY-MM'
-    const key = `${s.playerName}\x00${yearMonth}`
-    let st = map.get(key)
-    if (!st) {
-      st = {
-        playerName:   s.playerName,
-        yearMonth,
-        kills:        0,
-        durationMs:   0,
-        sessionCount: 0,
-        maxScore:     0,
-        lastSeenTs:   0,
-        regions:      [],
-      }
-      map.set(key, st)
-    }
-    st.kills        += s.killsGained
-    st.durationMs   += s.durationMs
-    st.sessionCount++
-    st.maxScore      = Math.max(st.maxScore, s.maxScore)
-    st.lastSeenTs    = Math.max(st.lastSeenTs, s.endTs)
-    if (!st.regions.includes(s.region)) st.regions.push(s.region)
-  }
-  return map
-}
-
-/**
- * Core maintenance job — runs at most once per hour.
- * 1. Fetches observations older than the month-aligned prune cutoff.
- * 2. Computes sessions from them and upserts permanent monthly stats.
- * 3. Deletes those expired observations (up to however many were fetched).
- *
- * Month-alignment ensures only complete calendar months are rolled up,
- * so sessions are never split across rollup boundaries.
- */
-async function rollupAndPrune(): Promise<void> {
-  const cutoff = getRollupCutoff()
-  if (cutoff <= 0) return
-
-  const expiredObs = await getObservationsBefore(cutoff)
-
-  if (expiredObs.length > 0) {
-    const sessions = computeSessions(expiredObs)
-    const statsMap = buildMonthlyStatsMap(sessions)
-
-    // CRITICAL: only delete observations AFTER confirming the archive write
-    // succeeded. If the table doesn't exist yet, we skip the prune entirely
-    // and retry next hour — no data is lost.
-    const archived = await upsertPlayerMonthlyStatsBatch([...statsMap.values()])
-    if (!archived) return
-
-    // Only delete as far as we fetched (protects against the MAX_ROWS cap:
-    // if we hit the limit we leave the remainder for the next hourly run).
-    const FETCH_CAP = 60_000
-    const deleteUpTo = expiredObs.length < FETCH_CAP
-      ? cutoff                                          // fetched everything
-      : expiredObs[expiredObs.length - 1].ts + 1       // partial — stop here
-    await pruneObservationsBefore(deleteUpTo)
-  } else {
-    // Nothing to archive — run a plain prune (same as the old behaviour).
-    await pruneObservationsBefore(cutoff)
-  }
-}
-
 // ── High-level queries ────────────────────────────────────────────────────────
 
 // ── How aggregation works ─────────────────────────────────────────────────────
-// Player leaderboard: computed by get_player_activity(p_since) RPC in PostgreSQL.
+// Player leaderboard: computed by get_player_stats_fast(p_since) RPC in PostgreSQL,
+// reading from survival_buckets_cache — which retains full history, no pruning.
 //   → Returns pre-aggregated rows, scales to any DB size, no client-side cap.
 // Sessions (for detail modal): fetched raw but capped to a 7-day window.
 //   → Modal shows recent session history; total stats in the leaderboard are always
@@ -321,8 +163,8 @@ function rpcRowToAggregate(r: {
 }
 
 /**
- * Merge monthly-stat rows with RPC aggregates into a single PlayerAggregate list.
- * Used by the "All" time window to combine archived history with live raw data.
+ * "All time" query — survival_buckets_cache retains full history (no pruning),
+ * so p_since=0 on the RPC already covers everything. No separate archive needed.
  */
 async function queryActivityAllTime(): Promise<{
   players: PlayerAggregate[]
@@ -330,64 +172,27 @@ async function queryActivityAllTime(): Promise<{
   totalObservations: number
   hasHistory: boolean
 }> {
-  const rollupCutoff = getRollupCutoff()
   const sessionSince = Date.now() - SESSION_FETCH_MS
 
-  // Fetch in parallel: server-side aggregation + monthly archive + recent sessions + obs count
-  const [rpcRows, monthlyStats, recentObs, obsCount] = await Promise.all([
-    getPlayerActivityRpc(rollupCutoff),
-    getAllPlayerMonthlyStats(),
+  const [rpcRows, recentObs, obsCount] = await Promise.all([
+    getPlayerActivityRpc(0),
     getObservationsSince(sessionSince),
-    countObservationsSince(rollupCutoff),
+    countObservationsSince(0),
   ])
 
-  // Start with archived monthly stats, then layer RPC (recent raw) on top
-  const merged = new Map<string, PlayerAggregate>()
-
-  for (const m of monthlyStats) {
-    let a = merged.get(m.playerName)
-    if (!a) {
-      a = { playerName: m.playerName, totalKills: 0, totalDurationMs: 0,
-            sessionCount: 0, maxScore: 0, lastSeen: 0, regions: [] }
-      merged.set(m.playerName, a)
-    }
-    a.totalKills      += m.kills
-    a.totalDurationMs += m.durationMs
-    a.sessionCount    += m.sessionCount
-    a.maxScore         = Math.max(a.maxScore, m.maxScore)
-    a.lastSeen         = Math.max(a.lastSeen, m.lastSeenTs)
-    for (const r of m.regions) if (!a.regions.includes(r)) a.regions.push(r)
-  }
-
-  for (const p of rpcRows) {
-    const agg = rpcRowToAggregate(p)
-    let a = merged.get(p.playerName)
-    if (!a) {
-      merged.set(p.playerName, agg)
-      continue
-    }
-    a.totalKills      += agg.totalKills
-    a.totalDurationMs += agg.totalDurationMs
-    a.sessionCount    += agg.sessionCount
-    a.maxScore         = Math.max(a.maxScore, agg.maxScore)
-    a.lastSeen         = Math.max(a.lastSeen, agg.lastSeen)
-    for (const r of agg.regions) if (!a.regions.includes(r)) a.regions.push(r)
-  }
-
-  const players  = [...merged.values()].sort((a, b) => b.totalKills - a.totalKills)
+  const players  = rpcRows.map(rpcRowToAggregate)
   const sessions = computeSessions(recentObs)
 
   return {
     players,
     sessions,
     totalObservations: obsCount,
-    hasHistory: monthlyStats.length > 0,
+    hasHistory: false,
   }
 }
 
 /**
  * Fetch all data for a given time window and compute sessions + player stats.
- * When since === 0 (All time), merges archived monthly stats with recent raw data.
  *
  * Player aggregates are computed server-side via RPC (no 60k row cap).
  * Sessions are fetched raw but limited to the last 7 days for the detail modal.

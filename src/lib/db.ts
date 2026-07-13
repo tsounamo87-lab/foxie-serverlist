@@ -1,13 +1,13 @@
 // ─── Shared observation store (Supabase) ─────────────────────────────────────
-// Replaces the local IndexedDB store with a Supabase table so ALL visitors
-// share the same activity data in real time.
+// All visitors read from the same Supabase tables, populated server-side by
+// supabase/functions/collect-activity (the browser never writes this data).
 //
 // Table schema (see README or SQL editor in Supabase):
 //   observations (id, ts, server_id, server_name, region,
 //                 player_name, kills, score)
 //   unique constraint on (ts, server_id, player_name)
 //
-// RLS policies: public SELECT + INSERT, no UPDATE/DELETE for anon.
+// RLS policies: public SELECT, no INSERT/UPDATE/DELETE for anon.
 
 import { supabase, supabaseConfigured } from './supabase'
 
@@ -21,36 +21,6 @@ export interface Observation {
   kills: number
   score: number
   ship: number
-}
-
-// ── Write ─────────────────────────────────────────────────────────────────────
-
-/**
- * Persist a batch of observations.
- * Uses upsert with ignoreDuplicates so multiple visitors watching the same
- * server at the same time don't create redundant rows.
- */
-export async function saveObservations(
-  obs: Omit<Observation, 'id'>[],
-): Promise<void> {
-  if (!supabaseConfigured || !obs.length) return
-
-  const rows = obs.map((o) => ({
-    ts:          o.ts,
-    server_id:   o.serverId,
-    server_name: o.serverName,
-    region:      o.region,
-    player_name: o.playerName,
-    kills:       o.kills,
-    score:       o.score,
-    ship:        o.ship,
-  }))
-
-  const { error } = await supabase!
-    .from('observations')
-    .upsert(rows, { onConflict: 'ts,server_id,player_name', ignoreDuplicates: true })
-
-  if (error) console.warn('[db] upsert error', error.message)
 }
 
 // ── Read ──────────────────────────────────────────────────────────────────────
@@ -156,145 +126,6 @@ export async function getLastRosterForServer(
 export async function clearAll(): Promise<void> {
   if (!supabaseConfigured) return
   await supabase!.from('observations').delete().gt('ts', 0)
-}
-
-// ── Monthly activity rollup (permanent history) ───────────────────────────────
-// Table: player_monthly_stats
-//   (player_name, year_month 'YYYY-MM', kills, duration_ms, session_count,
-//    max_score, last_seen_ts, regions text[], PRIMARY KEY(player_name, year_month))
-//
-// SQL to create (run once in Supabase SQL editor):
-//   CREATE TABLE player_monthly_stats (
-//     player_name   text    NOT NULL,
-//     year_month    text    NOT NULL,
-//     kills         integer NOT NULL DEFAULT 0,
-//     duration_ms   bigint  NOT NULL DEFAULT 0,
-//     session_count integer NOT NULL DEFAULT 0,
-//     max_score     integer NOT NULL DEFAULT 0,
-//     last_seen_ts  bigint  NOT NULL DEFAULT 0,
-//     regions       text[]  NOT NULL DEFAULT '{}',
-//     PRIMARY KEY (player_name, year_month)
-//   );
-//   ALTER TABLE player_monthly_stats ENABLE ROW LEVEL SECURITY;
-//   CREATE POLICY "public_read"   ON player_monthly_stats FOR SELECT USING (true);
-//   CREATE POLICY "public_insert" ON player_monthly_stats FOR INSERT WITH CHECK (true);
-//   CREATE POLICY "public_update" ON player_monthly_stats FOR UPDATE USING (true);
-
-export interface PlayerMonthlyStats {
-  playerName:   string
-  yearMonth:    string   // 'YYYY-MM'
-  kills:        number
-  durationMs:   number
-  sessionCount: number
-  maxScore:     number
-  lastSeenTs:   number
-  regions:      string[]
-}
-
-type MonthlyRow = {
-  player_name:   string
-  year_month:    string
-  kills:         number
-  duration_ms:   number
-  session_count: number
-  max_score:     number
-  last_seen_ts:  number
-  regions:       string[]
-}
-
-/**
- * Upsert monthly aggregated stats — idempotent (overwrites on conflict).
- * Returns true when the write succeeded, false when the table does not exist
- * yet (or any other DB error). The caller must NOT prune when this returns false.
- */
-export async function upsertPlayerMonthlyStatsBatch(
-  entries: PlayerMonthlyStats[],
-): Promise<boolean> {
-  if (!supabaseConfigured || !entries.length) return true  // nothing to write → safe
-  const rows: MonthlyRow[] = entries.map((e) => ({
-    player_name:   e.playerName,
-    year_month:    e.yearMonth,
-    kills:         e.kills,
-    duration_ms:   e.durationMs,
-    session_count: e.sessionCount,
-    max_score:     e.maxScore,
-    last_seen_ts:  e.lastSeenTs,
-    regions:       e.regions,
-  }))
-  const { error } = await supabase!
-    .from('player_monthly_stats')
-    .upsert(rows, { onConflict: 'player_name,year_month' })
-  if (error) {
-    console.warn('[db] monthly stats upsert error (table may not exist yet):', error.message)
-    return false
-  }
-  return true
-}
-
-/** Fetch all archived monthly stats (paginated, up to 50k rows). */
-export async function getAllPlayerMonthlyStats(): Promise<PlayerMonthlyStats[]> {
-  if (!supabaseConfigured) return []
-  const MAX_MONTHLY = 50_000
-  const all: MonthlyRow[] = []
-  for (let from = 0; from < MAX_MONTHLY; from += PAGE) {
-    const { data, error } = await supabase!
-      .from('player_monthly_stats')
-      .select('player_name, year_month, kills, duration_ms, session_count, max_score, last_seen_ts, regions')
-      .range(from, from + PAGE - 1)
-    if (error) { console.warn('[db] monthly stats fetch error', error.message); break }
-    const rows = (data ?? []) as MonthlyRow[]
-    all.push(...rows)
-    if (rows.length < PAGE) break
-  }
-  return all.map((r) => ({
-    playerName:   r.player_name,
-    yearMonth:    r.year_month,
-    kills:        r.kills,
-    durationMs:   r.duration_ms,
-    sessionCount: r.session_count,
-    maxScore:     r.max_score,
-    lastSeenTs:   r.last_seen_ts,
-    regions:      r.regions ?? [],
-  }))
-}
-
-/**
- * Retrieve observations with ts < cutoff, oldest first (for monthly rollup).
- * Fetches up to MAX_ROWS rows.
- */
-export async function getObservationsBefore(cutoff: number): Promise<Observation[]> {
-  if (!supabaseConfigured) return []
-  const all: Row[] = []
-  for (let from = 0; from < MAX_ROWS; from += PAGE) {
-    const { data, error } = await supabase!
-      .from('observations')
-      .select('id, ts, server_id, server_name, region, player_name, kills, score, ship')
-      .lt('ts', cutoff)
-      .order('ts', { ascending: true })
-      .range(from, from + PAGE - 1)
-    if (error) { console.warn('[db] select error', error.message); break }
-    const rows = (data ?? []) as Row[]
-    all.push(...rows)
-    if (rows.length < PAGE) break
-  }
-  return all.map((r) => ({
-    id:         r.id,
-    ts:         r.ts,
-    serverId:   r.server_id,
-    serverName: r.server_name,
-    region:     r.region,
-    playerName: r.player_name,
-    kills:      r.kills,
-    score:      r.score,
-    ship:       r.ship,
-  }))
-}
-
-/** Delete all observations with ts < cutoff. */
-export async function pruneObservationsBefore(cutoff: number): Promise<void> {
-  if (!supabaseConfigured) return
-  const { error } = await supabase!.from('observations').delete().lt('ts', cutoff)
-  if (error) console.warn('[db] prune error', error.message)
 }
 
 // ── Server-side player activity aggregation ───────────────────────────────────
@@ -411,32 +242,6 @@ export async function countObservationsSince(since: number): Promise<number> {
 //   CREATE POLICY "Public update" ON player_ecp FOR UPDATE USING (true);
 
 import type { PlayerCustom } from './players'
-
-/** Save multiple ECP entries in a single round-trip (preferred). */
-export async function upsertPlayerEcpBatch(
-  entries: { playerName: string; custom: PlayerCustom }[],
-): Promise<void> {
-  if (!supabaseConfigured || !entries.length) return
-  const now = Date.now()
-  const rowMap = new Map<string, { player_name: string; badge: string | null; finish: string | null; laser: string | null; hue: number; updated_at: number }>()
-  for (const e of entries) {
-    if (!e.playerName?.trim()) continue
-    rowMap.set(e.playerName.trim().toLowerCase(), {
-      player_name: e.playerName.trim(),
-      badge:       e.custom.badge  ?? null,
-      finish:      e.custom.finish ?? null,
-      laser:       e.custom.laser  ?? null,
-      hue:         e.custom.hue   ?? 0,
-      updated_at:  now,
-    })
-  }
-  const rows = [...rowMap.values()]
-  if (!rows.length) return
-  const { error } = await supabase!
-    .from('player_ecp')
-    .upsert(rows, { onConflict: 'player_name' })
-  if (error) console.warn('[db] ecp batch upsert error', error.message)
-}
 
 /** Save or update the latest ECP badge seen for a player. */
 export async function upsertPlayerEcp(
@@ -572,32 +377,6 @@ type BadgeHistoryRow = {
   last_seen:   number
 }
 
-/** Batch-upsert badge observations via RPC (preserves first_seen on conflict). */
-export async function upsertPlayerBadgeHistoryBatch(
-  entries: { playerName: string; custom: PlayerCustom }[],
-  now: number,
-): Promise<void> {
-  if (!supabaseConfigured || !entries.length) return
-  const rowMap = new Map<string, { player_name: string; badge_key: string; badge: string; finish: string; laser: string; hue: number; ts: number }>()
-  for (const e of entries) {
-    if (!e.playerName?.trim()) continue
-    const badgeKey = `${e.custom.badge ?? ''}|${e.custom.finish ?? ''}|${e.custom.laser ?? ''}|${e.custom.hue ?? 0}`
-    rowMap.set(`${e.playerName.trim().toLowerCase()}|${badgeKey}`, {
-      player_name: e.playerName.trim(),
-      badge_key:   badgeKey,
-      badge:       e.custom.badge   ?? '',
-      finish:      e.custom.finish  ?? '',
-      laser:       e.custom.laser   ?? '',
-      hue:         e.custom.hue    ?? 0,
-      ts:          now,
-    })
-  }
-  const rows = [...rowMap.values()]
-  if (!rows.length) return
-  const { error } = await supabase!.rpc('upsert_badge_history_batch', { p_rows: rows })
-  if (error) console.warn('[db] badge history batch error', error.message)
-}
-
 /** Fetch all badge history entries for a player, most recent first. */
 export async function getPlayerBadgeHistory(playerName: string): Promise<BadgeHistoryEntry[]> {
   if (!supabaseConfigured) return []
@@ -631,24 +410,6 @@ export interface TeamObservation {
   score: number
   ship: number
   team: number
-}
-
-export async function saveTeamObservations(obs: Omit<TeamObservation, 'id'>[]): Promise<void> {
-  if (!supabaseConfigured || !obs.length) return
-  const rows = obs.map((o) => ({
-    ts:          o.ts,
-    server_id:   o.serverId,
-    server_name: o.serverName,
-    region:      o.region,
-    player_name: o.playerName,
-    score:       o.score,
-    ship:        o.ship,
-    team:        o.team,
-  }))
-  const { error } = await supabase!
-    .from('team_observations')
-    .upsert(rows, { onConflict: 'ts,server_id,player_name', ignoreDuplicates: true })
-  if (error) console.warn('[db] team upsert error', error.message)
 }
 
 export interface TeamPlayerRow {
@@ -897,30 +658,19 @@ export async function getRecentTeammates(
 }
 
 // ── Ship usage ─────────────────────────────────────────────────────────────────
-// Tallied from the same short-retention raw tables as recent teammates, so
-// these reflect recent games only — not lifetime ship usage.
+// Tallied from the long-term bucket-cache tables (survival_buckets_cache /
+// team_buckets_cache), so this reflects a player's full history instead of
+// just the last few hours of raw observations.
 //
 // Every player starts each life on the tier-1 "Fly", so a raw per-snapshot
 // tally would always be dominated by Fly regardless of what people actually
-// fly. What matters is the ship they ended up on — so for each (player,
-// server) pair we keep only the LAST observed ship (highest ts) and tally
-// those "final ships" instead of every snapshot.
+// fly. refresh_survival_buckets()/refresh_team_buckets() already resolve this
+// server-side — each bucket row's `ship` column is the LAST observed ship in
+// that 30-min window — so here we just tally that column directly.
 
 export interface ShipUsage {
   ship: number
   count: number
-}
-
-interface ShipRow { ts: number; ship: number }
-
-function lastShipPerGroup<T extends ShipRow>(rows: T[], keyOf: (r: T) => string): ShipRow[] {
-  const last = new Map<string, ShipRow>()
-  for (const r of rows) {
-    const key = keyOf(r)
-    const cur = last.get(key)
-    if (!cur || r.ts > cur.ts) last.set(key, { ts: r.ts, ship: r.ship })
-  }
-  return [...last.values()]
 }
 
 function tallyShips(rows: { ship: number }[]): ShipUsage[] {
@@ -934,43 +684,46 @@ function tallyShips(rows: { ship: number }[]): ShipUsage[] {
     .sort((a, b) => b.count - a.count)
 }
 
-/** Which ships `playerName` ended games on recently, most-used first. */
+const SHIP_BUCKET_TABLE = {
+  observations:      'survival_buckets_cache',
+  team_observations: 'team_buckets_cache',
+} as const
+
+/** Which ships `playerName` has ended windows on, most-used first (full history). */
 export async function getPlayerShipUsage(
   playerName: string,
   table: 'observations' | 'team_observations' = 'observations',
 ): Promise<ShipUsage[]> {
   if (!supabaseConfigured || !playerName?.trim()) return []
   const { data, error } = await supabase!
-    .from(table)
-    .select('server_id, ts, ship')
+    .from(SHIP_BUCKET_TABLE[table])
+    .select('ship')
     .eq('player_name', playerName)
   if (error || !data) return []
-  const rows = data as { server_id: string; ts: number; ship: number }[]
-  const finalShips = lastShipPerGroup(rows, (r) => r.server_id)
-  return tallyShips(finalShips)
+  return tallyShips(data as { ship: number }[])
 }
 
-/** Ships people ended games on recently across everyone, most-used first. */
+/** Ships people have ended windows on across everyone, most-used first. */
 export async function getMostUsedShips(
   table: 'observations' | 'team_observations' = 'observations',
   limit = 10,
 ): Promise<ShipUsage[]> {
   if (!supabaseConfigured) return []
+  const bucketTable = SHIP_BUCKET_TABLE[table]
   // Supabase caps each response at ~1000 rows regardless of .limit(), so page
-  // through the most recent rows (ordered newest-first) for a representative
+  // through the most recent buckets (ordered newest-first) for a representative
   // sample instead of whatever arbitrary 1000 rows an unordered query returns.
-  const all: { player_name: string; server_id: string; ts: number; ship: number }[] = []
+  const all: { ship: number }[] = []
   for (let from = 0; from < 5000; from += PAGE) {
     const { data, error } = await supabase!
-      .from(table)
-      .select('player_name, server_id, ts, ship')
-      .order('ts', { ascending: false })
+      .from(bucketTable)
+      .select('ship')
+      .order('bucket_ts', { ascending: false })
       .range(from, from + PAGE - 1)
     if (error) break
-    const rows = (data ?? []) as typeof all
+    const rows = (data ?? []) as { ship: number }[]
     all.push(...rows)
     if (rows.length < PAGE) break
   }
-  const finalShips = lastShipPerGroup(all, (r) => `${r.player_name}\x00${r.server_id}`)
-  return tallyShips(finalShips).slice(0, limit)
+  return tallyShips(all).slice(0, limit)
 }

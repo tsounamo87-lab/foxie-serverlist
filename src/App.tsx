@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Map as MapIcon, Search, SearchX, Trophy, TrendingUp, WifiOff, Zap } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Header } from './components/Header'
@@ -26,8 +26,6 @@ import { useToasts } from './store/toasts'
 import { Sounds } from './lib/sounds'
 import { SurvivalActivity } from './components/SurvivalActivity'
 import { TeamActivity } from './components/TeamActivity'
-import { recordSnapshot } from './lib/survivalTracker'
-import { recordTeamSnapshot } from './lib/teamTracker'
 import { useClans } from './store/clans'
 import { ClanManager } from './components/ClanManager'
 import { useCustom } from './store/custom'
@@ -156,24 +154,8 @@ function App() {
       }
     }
 
-    void recordSnapshot(enriched, fetchedAt)
-    void recordTeamSnapshot(enriched, fetchedAt)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchedAt])
-
-  // Independent 30s observation timer — captures data between simstatus refreshes
-  // and when the user has a slow display refresh setting.
-  const enrichedRef = useRef(enriched)
-  useEffect(() => { enrichedRef.current = enriched }, [enriched])
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (!enrichedRef.current.length) return
-      const now = Date.now()
-      void recordSnapshot(enrichedRef.current, now)
-      void recordTeamSnapshot(enrichedRef.current, now)
-    }, 30_000)
-    return () => clearInterval(id)
-  }, [])
 
   // Keep the open modal's player data fresh as polls come in.
   useEffect(() => {
