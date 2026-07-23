@@ -76,7 +76,7 @@ export interface PlayerActivityRow {
  * in PostgreSQL. Returns one row per player, sorted by kills descending.
  * Paginates automatically (Supabase caps RPC responses at 1000 rows by default).
  */
-export async function getPlayerActivityRpc(since: number, maxRows = 30_000): Promise<PlayerActivityRow[]> {
+export async function getPlayerActivityRpc(since: number, maxRows = 300_000): Promise<PlayerActivityRow[]> {
   if (!supabaseConfigured) return []
 
   type Row = {
@@ -349,7 +349,7 @@ export interface TeamPlayerRow {
 
 export type TeamType = 'classic' | 'gotn' | 'aow'
 
-export async function getTeamPlayerStatsRpc(since: number, type: TeamType = 'classic', maxRows = 30_000): Promise<TeamPlayerRow[]> {
+export async function getTeamPlayerStatsRpc(since: number, type: TeamType = 'classic', maxRows = 300_000): Promise<TeamPlayerRow[]> {
   if (!supabaseConfigured) return []
 
   type TRow = {
