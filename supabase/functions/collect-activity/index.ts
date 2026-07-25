@@ -49,19 +49,28 @@ interface RelayPlayer {
 }
 
 /**
- * fetch + parse JSON with one retry. Deno's fetch occasionally throws
- * "error reading a body from connection" on an otherwise-healthy endpoint
- * (seen against dankdmitron's server specifically) — a stale/reused
- * connection, not a real outage. A single retry clears it.
+ * fetch + parse JSON with retries. Deno's fetch against dankdmitron's server
+ * has been throwing "error reading a body from connection" — confirmed to
+ * NOT be a real outage (the same URL is healthy from a browser at the same
+ * moment this fails), so retry with a forced-fresh connection instead of
+ * giving up on the first failure.
  */
 async function fetchJsonRetry<T>(url: string, timeoutMs: number): Promise<T | null> {
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
+      const r = await fetch(url, {
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: {
+          'Connection':  'close',
+          'User-Agent':  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept':      'application/json, */*',
+        },
+      })
       if (!r.ok) return null
-      return await r.json() as T
+      const text = await r.text()
+      return JSON.parse(text) as T
     } catch (e) {
-      if (attempt === 0) { console.warn(`[collector] fetch retry for ${url}:`, String(e)); continue }
+      if (attempt < 2) { console.warn(`[collector] fetch retry ${attempt + 1} for ${url}:`, String(e)); continue }
       console.warn(`[collector] fetch failed for ${url}:`, String(e))
       return null
     }
