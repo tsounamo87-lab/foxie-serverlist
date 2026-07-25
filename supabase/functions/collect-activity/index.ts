@@ -9,7 +9,8 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const SIMSTATUS_URL   = 'https://starblast.dankdmitron.dev/api/simstatus.json'
+const SIMSTATUS_URL          = 'https://starblast.dankdmitron.dev/api/simstatus.json'
+const SIMSTATUS_FALLBACK_URL = 'https://game.starblast.io/simstatus.json'
 const PM_GAMES_URL    = 'https://api.pixelmelt.dev/games'
 const RELAY_URL       = 'wss://starblast.dankdmitron.dev/api/'
 const RELAY_TIMEOUT_MS = 6_000
@@ -49,11 +50,10 @@ interface RelayPlayer {
 }
 
 /**
- * fetch + parse JSON with retries. Deno's fetch against dankdmitron's server
- * has been throwing "error reading a body from connection" — confirmed to
- * NOT be a real outage (the same URL is healthy from a browser at the same
- * moment this fails), so retry with a forced-fresh connection instead of
- * giving up on the first failure.
+ * fetch + parse JSON with retries. Deno's fetch against starblast-related
+ * hosts has been intermittently failing (connection/DNS errors) while the
+ * same URLs are healthy from a browser at the same moment — retry with a
+ * forced-fresh connection instead of giving up on the first failure.
  */
 async function fetchJsonRetry<T>(url: string, timeoutMs: number): Promise<T | null> {
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -183,6 +183,7 @@ Deno.serve(async (_req) => {
   const survivalKeys = new Set<string>()
   const teamKeys      = new Set<string>()
   const servers = await fetchJsonRetry<SimServer[]>(SIMSTATUS_URL, 8_000)
+    ?? await fetchJsonRetry<SimServer[]>(SIMSTATUS_FALLBACK_URL, 8_000)
   if (servers) {
     for (const s of servers) {
       for (const sys of s.systems) {
