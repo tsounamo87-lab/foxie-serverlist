@@ -11,6 +11,8 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const SIMSTATUS_URL   = 'https://starblast.dankdmitron.dev/api/simstatus.json'
 const PM_GAMES_URL    = 'https://api.pixelmelt.dev/games'
+const RELAY_URL       = 'wss://starblast.dankdmitron.dev/api/'
+const RELAY_TIMEOUT_MS = 6_000
 // Matches the cron schedule (every 1 min). Must not be wider than that, or
 // intermediate polls within a window get silently dropped by the upsert's
 // ignoreDuplicates — losing whatever score/kills progression happened between
@@ -38,6 +40,121 @@ interface PxGame {
   mode?: { id?: string; root_mode?: string }
 }
 
+interface RelayPlayer {
+  player_name: string
+  score:       number
+  ship:        number
+  friendly:    number
+  custom:      { badge?: string; finish?: string; laser?: string; hue?: number } | null
+}
+
+/**
+ * fetch + parse JSON with one retry. Deno's fetch occasionally throws
+ * "error reading a body from connection" on an otherwise-healthy endpoint
+ * (seen against dankdmitron's server specifically) — a stale/reused
+ * connection, not a real outage. A single retry clears it.
+ */
+async function fetchJsonRetry<T>(url: string, timeoutMs: number): Promise<T | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
+      if (!r.ok) return null
+      return await r.json() as T
+    } catch (e) {
+      if (attempt === 0) { console.warn(`[collector] fetch retry for ${url}:`, String(e)); continue }
+      console.warn(`[collector] fetch failed for ${url}:`, String(e))
+      return null
+    }
+  }
+  return null
+}
+
+// ── Relay fallback (for team games Pixelmelt doesn't track, e.g. AOW) ─────────
+// Pixelmelt only tracks a subset of live games — some team games (large
+// custom/community events like AOW in particular) never show up in its
+// /games response. dankdmitron's relay is the same live spectator feed the
+// browser's map view uses, and it works for any game regardless of whether
+// Pixelmelt tracks it. Used only for the team games Pixelmelt's list is
+// missing, so this stays cheap (a handful of connections per run, not one
+// per game). Kills are not available in the relay's snapshot frame — fine,
+// team_observations doesn't track kills at all.
+async function fetchRelayGame(compositeId: string): Promise<RelayPlayer[]> {
+  return await new Promise((resolve) => {
+    let settled = false
+    const profiles = new Map<number, { player_name: string; friendly: number; custom: RelayPlayer['custom'] }>()
+    const requested = new Set<number>()
+    let latest: { id: number; score: number; ship: number }[] = []
+    let ws: WebSocket | null = null
+
+    const buildResult = (): RelayPlayer[] =>
+      latest
+        .map((s) => {
+          const prof = profiles.get(s.id)
+          if (!prof?.player_name) return null
+          return { player_name: prof.player_name, score: s.score, ship: s.ship, friendly: prof.friendly, custom: prof.custom }
+        })
+        .filter((p): p is RelayPlayer => p !== null)
+
+    const finish = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      try { ws?.close() } catch { /* noop */ }
+      resolve(buildResult())
+    }
+
+    const timer = setTimeout(finish, RELAY_TIMEOUT_MS)
+
+    try {
+      ws = new WebSocket(RELAY_URL)
+      ws.binaryType = 'arraybuffer'
+    } catch {
+      clearTimeout(timer)
+      resolve([])
+      return
+    }
+
+    ws.onopen = () => {
+      try { ws!.send(JSON.stringify({ name: 'subscribe', data: { id: compositeId } })) } catch { /* noop */ }
+    }
+
+    ws.onmessage = (e) => {
+      if (typeof e.data === 'string') {
+        let msg: { name: string; data: Record<string, unknown> }
+        try { msg = JSON.parse(e.data) } catch { return }
+        if (msg.name === 'player_name') {
+          const d = msg.data
+          const name = (d.player_name as string) ?? ''
+          if (name) {
+            profiles.set(d.id as number, {
+              player_name: name,
+              friendly:    (d.friendly as number) ?? 0,
+              custom:      (d.custom as RelayPlayer['custom']) ?? null,
+            })
+          }
+        }
+        return
+      }
+      const view = new DataView(e.data as ArrayBuffer)
+      if (view.getUint8(0) !== 0x01) return
+      const out: { id: number; score: number; ship: number }[] = []
+      for (let off = 1; off <= view.byteLength - 15; off += 15) {
+        const id = view.getUint8(off)
+        const v  = view.getUint16(off + 13, true)
+        if (!profiles.has(id) && !requested.has(id)) {
+          requested.add(id)
+          try { ws!.send(JSON.stringify({ name: 'get_name', data: { id } })) } catch { /* noop */ }
+        }
+        out.push({ id, score: view.getUint32(off + 9, true), ship: v & ~(1 << 15) })
+      }
+      latest = out
+    }
+
+    ws.onerror = finish
+    ws.onclose = finish
+  })
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 Deno.serve(async (_req) => {
@@ -55,27 +172,25 @@ Deno.serve(async (_req) => {
   // ── 1. Fetch simstatus (names + regions) ──────────────────────────────────
   const meta         = new Map<string, { name: string; location: string; mode: string }>()
   const survivalKeys = new Set<string>()
-  try {
-    const r = await fetch(SIMSTATUS_URL, { signal: AbortSignal.timeout(8_000) })
-    if (r.ok) {
-      const servers: SimServer[] = await r.json()
-      for (const s of servers) {
-        for (const sys of s.systems) {
-          const key = `${sys.id}@${s.address}`
-          meta.set(key, { name: sys.name, location: s.location, mode: sys.mode ?? '' })
-          if (sys.survival || sys.mode === 'survival') survivalKeys.add(key)
-        }
+  const teamKeys      = new Set<string>()
+  const servers = await fetchJsonRetry<SimServer[]>(SIMSTATUS_URL, 8_000)
+  if (servers) {
+    for (const s of servers) {
+      for (const sys of s.systems) {
+        const key = `${sys.id}@${s.address}`
+        meta.set(key, { name: sys.name, location: s.location, mode: sys.mode ?? '' })
+        if (sys.survival || sys.mode === 'survival') survivalKeys.add(key)
+        if (sys.mode === 'team' || /aow/i.test(sys.name)) teamKeys.add(key)
       }
     }
-  } catch { console.warn('[collector] simstatus fetch failed') }
-  console.warn(`[collector] simstatus: ${meta.size} games, ${survivalKeys.size} survival`)
+  } else {
+    console.warn('[collector] simstatus fetch failed')
+  }
+  console.warn(`[collector] simstatus: ${meta.size} games, ${survivalKeys.size} survival, ${teamKeys.size} team`)
 
   // ── 2. Fetch Pixelmelt (player data) ──────────────────────────────────────
-  let pxGames: PxGame[] = []
-  try {
-    const r = await fetch(PM_GAMES_URL, { signal: AbortSignal.timeout(8_000) })
-    if (r.ok) pxGames = await r.json()
-  } catch {
+  const pxGames = await fetchJsonRetry<PxGame[]>(PM_GAMES_URL, 8_000)
+  if (!pxGames) {
     return new Response(JSON.stringify({ ok: false, error: 'pixelmelt fetch failed' }), { status: 502 })
   }
 
@@ -154,6 +269,62 @@ Deno.serve(async (_req) => {
       }
     }
   }
+
+  // ── 3b. Relay fallback for team games Pixelmelt didn't report ────────────
+  const pxGameKeys  = new Set(pxGames.filter((g) => g.compositeId).map((g) => g.compositeId as string))
+  const gapTeamKeys = [...teamKeys].filter((k) => !pxGameKeys.has(k))
+  let relayGames = 0
+  if (gapTeamKeys.length > 0) {
+    const results = await Promise.all(gapTeamKeys.map(async (key) => {
+      try {
+        return { key, players: await fetchRelayGame(key) }
+      } catch (e) {
+        console.warn(`[collector] relay fetch failed for ${key}:`, String(e))
+        return { key, players: [] as RelayPlayer[] }
+      }
+    }))
+    for (const { key, players } of results) {
+      if (players.length === 0) continue
+      relayGames++
+      teamGames++
+      const m = meta.get(key)
+      for (const p of players) {
+        const name = p.player_name.trim()
+        if (!name) continue
+        teamRows.push({
+          ts:          bucketTs,
+          server_id:   key,
+          server_name: m?.name     ?? key,
+          region:      m?.location ?? 'Unknown',
+          player_name: name,
+          score:       p.score    ?? 0,
+          ship:        p.ship     ?? 0,
+          team:        p.friendly ?? 0,
+        })
+        if (p.custom && Object.keys(p.custom).length > 0) {
+          ecpRows.push({
+            player_name: name,
+            badge:       p.custom.badge  ?? null,
+            finish:      p.custom.finish ?? null,
+            laser:       p.custom.laser  ?? null,
+            hue:         p.custom.hue    ?? 0,
+            updated_at:  Date.now(),
+          })
+          const badgeKey = `${p.custom.badge ?? ''}|${p.custom.finish ?? ''}|${p.custom.laser ?? ''}|${p.custom.hue ?? 0}`
+          badgeRows.push({
+            player_name: name,
+            badge_key:   badgeKey,
+            badge:       p.custom.badge  ?? '',
+            finish:      p.custom.finish ?? '',
+            laser:       p.custom.laser  ?? '',
+            hue:         p.custom.hue    ?? 0,
+            ts:          bucketTs,
+          })
+        }
+      }
+    }
+  }
+  console.warn(`[collector] relay fallback: ${gapTeamKeys.length} gap games, ${relayGames} recovered`)
 
   // ── 4. Write observations ─────────────────────────────────────────────────
   if (obsRows.length > 0) {
@@ -370,7 +541,7 @@ Deno.serve(async (_req) => {
     console.error('[collector] notification check error', e)
   }
 
-  console.warn(`[collector] pixelmelt=${totalGames} games, survival=${survivalGames}, team=${teamGames}, obs=${obsRows.length}, teamObs=${teamRows.length}, ecp=${ecpRows.length}, badges=${badgeRows.length}, notifSent=${notifSent}`)
+  console.warn(`[collector] pixelmelt=${totalGames} games, survival=${survivalGames}, team=${teamGames} (relay=${relayGames}), obs=${obsRows.length}, teamObs=${teamRows.length}, ecp=${ecpRows.length}, badges=${badgeRows.length}, notifSent=${notifSent}`)
 
   return new Response(
     JSON.stringify({ ok: true, observations: obsRows.length, teamObservations: teamRows.length, ecp: ecpRows.length, badges: badgeRows.length, notifSent }),
